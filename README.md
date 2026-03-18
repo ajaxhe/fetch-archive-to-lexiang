@@ -51,21 +51,10 @@ Agent 会自动完成仓库克隆、依赖安装和初始配置。
 
 ### 前置条件
 
-使用前需确保以下环境已就绪：
-
-1. **乐享 MCP**：本 Skill 通过 [lexiang MCP](https://github.com/nicognaW/lexiang-mcp) 操作乐享知识库。访问 [lexiangla.com/mcp](https://lexiangla.com/mcp) 获取 Token 并在 Agent 的 MCP 配置中添加 lexiang server
+1. **乐享 MCP**：本 Skill 通过 [lexiang MCP](https://github.com/nicognaW/lexiang-mcp) 操作乐享知识库，需提前在 Agent 的 MCP 配置中添加 lexiang server（[获取 Token](https://lexiangla.com/mcp)）
 2. **Python 3.8+**：脚本运行环境
-3. **依赖包**（Agent 会自动安装，也可手动执行）：
-   ```bash
-   # 文章抓取
-   pip3 install playwright cryptography && python3 -m playwright install chromium
-   # Markdown → PDF
-   pip3 install pymupdf
-   # YouTube/播客 转录（可选）
-   brew install yt-dlp ffmpeg && pip3 install openai-whisper
-   # 翻译 & 繁简转换（可选）
-   pip3 install openai opencc-python-reimplemented
-   ```
+
+> 其他依赖（Playwright、yt-dlp、Whisper 等）均由 Agent 在首次使用时自动检测并安装，无需手动操作。
 
 ## 使用方式
 
