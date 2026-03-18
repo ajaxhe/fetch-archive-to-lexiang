@@ -41,51 +41,31 @@ fetch-archive/
 
 ## 安装
 
-### 1. 安装为 Agent Skill
+只需在 Agent 对话中发送：
 
-根据你使用的 Agent，将本仓库克隆到对应的 skills 目录：
-
-```bash
-# CodeBuddy
-git clone https://github.com/ajaxhe/fetch-archive-to-lexiang.git .codebuddy/skills/fetch-archive
-
-# OpenClaw / Claude Code（放入 .claude/skills/ 或自定义 skills 目录）
-git clone https://github.com/ajaxhe/fetch-archive-to-lexiang.git .claude/skills/fetch-archive
-
-# Gemini CLI（放入 .gemini/skills/ 或自定义 skills 目录）
-git clone https://github.com/ajaxhe/fetch-archive-to-lexiang.git .gemini/skills/fetch-archive
+```
+帮我安装这个 skill：https://github.com/ajaxhe/fetch-archive-to-lexiang
 ```
 
-> **原理**：Skill 的核心是 `SKILL.md`（Agent 指令定义）+ `scripts/`（可执行脚本）。只要 Agent 能读取 `SKILL.md` 并执行终端命令，就能使用本 Skill。
+Agent 会自动完成仓库克隆、依赖安装和初始配置。
 
-### 2. 安装 Python 依赖
+### 前置条件
 
-```bash
-# 文章抓取
-pip3 install playwright cryptography
-python3 -m playwright install chromium
+使用前需确保以下环境已就绪：
 
-# Markdown → PDF
-pip3 install pymupdf
-
-# YouTube/播客 转录
-brew install yt-dlp ffmpeg        # macOS；Linux 用 apt/yum 安装
-pip3 install openai-whisper
-
-# 翻译（可选）
-pip3 install openai
-
-# 中文播客繁简转换（可选）
-pip3 install opencc-python-reimplemented
-```
-
-### 3. 配置乐享 MCP
-
-本 Skill 通过 [lexiang MCP](https://github.com/nicognaW/lexiang-mcp) 操作乐享知识库。
-
-1. 访问 [https://lexiangla.com/mcp](https://lexiangla.com/mcp) 获取 `LEXIANG_TOKEN`
-2. 在 Agent 的 MCP 配置中添加 lexiang server
-3. 首次使用时，Skill 会引导你粘贴目标知识库链接完成 `config.json` 配置
+1. **乐享 MCP**：本 Skill 通过 [lexiang MCP](https://github.com/nicognaW/lexiang-mcp) 操作乐享知识库。访问 [lexiangla.com/mcp](https://lexiangla.com/mcp) 获取 Token 并在 Agent 的 MCP 配置中添加 lexiang server
+2. **Python 3.8+**：脚本运行环境
+3. **依赖包**（Agent 会自动安装，也可手动执行）：
+   ```bash
+   # 文章抓取
+   pip3 install playwright cryptography && python3 -m playwright install chromium
+   # Markdown → PDF
+   pip3 install pymupdf
+   # YouTube/播客 转录（可选）
+   brew install yt-dlp ffmpeg && pip3 install openai-whisper
+   # 翻译 & 繁简转换（可选）
+   pip3 install openai opencc-python-reimplemented
+   ```
 
 ## 使用方式
 
