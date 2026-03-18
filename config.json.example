@@ -1,16 +1,16 @@
 {
   "$schema": "./config.schema.json",
   "_comment": "fetch-archive skill 配置文件。首次使用时粘贴知识库链接即可自动完成配置，也可手动编辑。",
-  "_initialized": true,
+  "_initialized": false,
 
   "lexiang": {
     "_comment": "乐享知识库配置。用于文章/视频/播客的归档转存。",
 
     "target_space": {
       "_comment": "目标知识库信息。从用户粘贴的知识库链接中自动解析填充。",
-      "space_id": "b6013f6492894a29abbd89d5f2e636c6",
-      "space_name": "贾维斯",
-      "company_from": "e6c565d6d16811efac17768586f8a025"
+      "space_id": "",
+      "space_name": "",
+      "company_from": ""
     },
 
     "access_domain": {
