@@ -1,0 +1,146 @@
+# fetch-archive-to-lexiang
+
+CodeBuddy Skill：抓取文章 / 视频 / 播客，并归档到[乐享](https://lexiangla.com)知识库。
+
+## 功能概述
+
+将任意 URL 的内容抓取为结构化 Markdown，自动转存到乐享知识库，实现素材归档和可追溯。
+
+### 支持的内容类型
+
+| 类型 | 来源 | 处理方式 |
+|------|------|---------|
+| 📝 **图文文章** | 微信公众号、Substack、Medium、知识星球等 | Playwright 抓取 → Markdown + 图片 → PDF → 上传乐享 |
+| 🔒 **付费/登录墙文章** | Substack 付费订阅、Medium 会员等 | Chrome Cookie 注入 / CDP 模式 → 全文抓取 |
+| 🎬 **YouTube 视频** | YouTube | yt-dlp 下载 → Whisper 转录 → AI 翻译（中英对照）→ 上传乐享 |
+| 🎙️ **播客音频** | 小宇宙FM、Apple Podcasts 等 | yt-dlp 下载音频 → Whisper 转录 → 繁简转换 → 上传乐享 |
+| 📄 **免费文章** | 任意公开网页 | web_fetch / Playwright → Markdown → 上传乐享 |
+
+### 乐享知识库归档
+
+- 按**天维度**自动创建日期目录（如 `2026-03-18/`）
+- 图文文章转为 **PDF**（嵌入图片）上传
+- 纯文本/文字稿以**在线文档（page）**格式创建，支持在线编辑
+- 自动**去重检查**，避免重复上传
+- 通过 **lexiang MCP** 工具操作知识库，安全且通用
+
+## 文件结构
+
+```
+fetch-archive/
+├── SKILL.md              # Skill 定义文件（Agent 指令）
+├── config.json           # 运行时配置（目标知识库等）
+├── README.md             # 本文件
+└── scripts/
+    ├── fetch_article.py          # 文章抓取脚本（Cookie 注入 / CDP 模式）
+    ├── md_to_pdf.py              # Markdown → PDF 转换（嵌入图片、中文渲染）
+    └── yt_download_transcribe.py # YouTube/播客 下载 + Whisper 转录 + AI 翻译
+```
+
+## 安装
+
+### 1. 安装为 CodeBuddy Skill
+
+将本仓库克隆到 CodeBuddy 的 skills 目录：
+
+```bash
+# 进入你的项目目录
+cd <your-project>
+
+# 克隆到 .codebuddy/skills/ 下
+git clone https://github.com/ajaxhe/fetch-archive-to-lexiang.git .codebuddy/skills/fetch-archive
+```
+
+### 2. 安装 Python 依赖
+
+```bash
+# 文章抓取
+pip3 install playwright cryptography
+python3 -m playwright install chromium
+
+# Markdown → PDF
+pip3 install pymupdf
+
+# YouTube/播客 转录
+brew install yt-dlp ffmpeg
+pip3 install openai-whisper
+
+# 翻译（可选）
+pip3 install openai
+
+# 中文播客繁简转换（可选）
+pip3 install opencc-python-reimplemented
+```
+
+### 3. 配置乐享 MCP
+
+本 skill 通过 [lexiang MCP](https://github.com/tencent-lexiang/lexiang-mcp-skill) 操作乐享知识库。
+
+1. 访问 [https://lexiangla.com/mcp](https://lexiangla.com/mcp) 获取 `LEXIANG_TOKEN`
+2. 在 CodeBuddy 的 MCP 管理面板中添加 lexiang server
+3. 首次使用时，Skill 会引导你粘贴目标知识库链接完成配置
+
+## 使用方式
+
+在 CodeBuddy 对话中直接使用自然语言：
+
+```
+# 抓取微信公众号文章并归档
+把这篇文章转存到知识库：https://mp.weixin.qq.com/s/xxxxx
+
+# 抓取 Substack 付费文章
+抓取这篇文章：https://www.lennysnewsletter.com/p/xxxxx
+
+# YouTube 视频转录
+转录这个视频：https://www.youtube.com/watch?v=xxxxx
+
+# 播客转录
+转录这期播客：https://www.xiaoyuzhoufm.com/episode/xxxxx
+```
+
+## 脚本独立使用
+
+脚本也可以脱离 Skill 框架独立运行：
+
+```bash
+# 抓取文章（Cookie 注入模式）
+python3 scripts/fetch_article.py fetch <URL> --output-dir <输出目录>
+
+# 抓取文章（CDP 模式，适用于 LinkedIn 等需要 Google 登录的站点）
+python3 scripts/fetch_article.py fetch <URL> --output-dir <输出目录> --cdp
+
+# Substack 登录（首次使用前执行一次）
+python3 scripts/fetch_article.py login
+
+# Markdown 转 PDF
+python3 scripts/md_to_pdf.py <article.md路径>
+
+# YouTube 视频下载 + 转录 + 翻译
+python3 scripts/yt_download_transcribe.py <YouTube URL> --output-dir <输出目录>
+```
+
+## 配置说明
+
+`config.json` 在首次使用时通过对话自动完成配置，也可手动编辑：
+
+```json
+{
+  "_initialized": true,
+  "lexiang": {
+    "target_space": {
+      "space_id": "<知识库ID>",
+      "space_name": "<知识库名称>",
+      "company_from": "<企业标识>"
+    },
+    "access_domain": {
+      "domain": "lexiangla.com",
+      "page_url_template": "https://lexiangla.com/pages/{entry_id}",
+      "space_url_template": "https://lexiangla.com/spaces/{space_id}?company_from={company_from}"
+    }
+  }
+}
+```
+
+## License
+
+MIT

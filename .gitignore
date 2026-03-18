@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Runtime config (contains user-specific settings)
+# Uncomment if you want to track config.json as a template
+# config.json
