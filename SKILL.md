@@ -810,6 +810,44 @@ simplified_text = converter.convert(traditional_text)
 3. **图片 URL 格式** — 扩展名是否在路径中？是否需要从查询参数推断？
 4. **防盗链策略** — 是否需要正确的 Referer？是否有其他鉴权机制？
 
+### 得到 APP 文章抓取（dedao.cn）
+
+**核心问题**：得到 APP（`www.dedao.cn`）的文章内容是**付费内容 + SPA 动态渲染**，`web_fetch` 和 `fetch_article.py` 的通用提取逻辑都无法直接获取正文。
+
+**技术原因**：
+1. **SPA 架构**：得到网页版是 React SPA，文章正文通过 JS 异步渲染，`web_fetch` 只能拿到空白壳页面
+2. **付费墙**：文章属于付费专栏内容，必须有已登录且已订阅的账号才能查看全文
+3. **DOM 结构特殊**：正文容器使用 `.iget-articles` 类名，不在 `fetch_article.py` 的默认选择器列表（`article`、`.post-content` 等）中。通用 `article` 选择器只匹配到极少内容（~167 字符），而真正的正文在 `.iget-articles` 中有 6000+ 字符
+4. **内容区混杂**：正文容器中混入了标题重复、音频时长、"划重点"、用户评论等非正文内容，需要清理
+
+**抓取方案**：使用 **CDP 模式**连接已登录得到的 Chrome 浏览器：
+
+```bash
+# 前提：用户已在 Chrome 中登录得到 APP 且有文章阅读权限
+python scripts/fetch_article.py fetch "https://www.dedao.cn/course/article?id=<ID>" --output-dir <目录> --cdp
+```
+
+**已知限制**：
+- `fetch_article.py` 的通用内容提取逻辑对得到 DOM 结构匹配不佳，**抓取结果可能不完整**
+- 正确做法是通过 Playwright CDP 连接后，**手动指定 `.iget-articles` 选择器**提取正文：
+
+```python
+# 通过 CDP 连接后，用专用选择器提取得到文章正文
+content_el = await page.query_selector('.iget-articles')
+if content_el:
+    text = await content_el.inner_text()  # 完整正文
+```
+
+**内容清理要点**：
+- 去掉正文开头的标题重复、日期、音频时长等元信息（通常在 `凡哥杂谈，你好` 或类似开场白之前）
+- 去掉正文末尾的"划重点"、"添加到笔记"、"首次发布"、"用户留言"等非正文内容
+- 如果是多篇系列文章（如上/下篇），合并时用 `## 上篇` / `## 下篇` 分隔
+- 作者信息需要手动确认（通用提取器可能抓错）
+
+**适用场景**：得到 APP 专栏文章（`www.dedao.cn/course/article?id=xxx`）
+
+**TODO**：考虑在 `fetch_article.py` 中增加得到专用检测和选择器（类似微信公众号的 `_is_wechat_article` 机制），自动使用 `.iget-articles` 提取正文。
+
 ### Python 兼容性
 
 脚本使用 `from __future__ import annotations` 以兼容 Python 3.9（`str | None` 联合类型语法在 3.9 中不可用）。
