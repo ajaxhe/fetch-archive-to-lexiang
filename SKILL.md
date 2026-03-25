@@ -214,17 +214,13 @@ python scripts/translate_article.py <原文.md> <输出.md> --model gpt-4o-mini
 
 [英文原文段落]
 
----
-
-🇨🇳 [中文翻译]
+[中文翻译]
 
 ## 第二节英文标题
 
 [英文原文...]
 
----
-
-🇨🇳 [中文翻译...]
+[中文翻译...]
 ```
 
 **翻译工作流**：
@@ -304,17 +300,13 @@ python3 scripts/yt_download_transcribe.py "<YouTube URL>" \
 
 This is the original English text from the video...
 
-🇨🇳 这是视频中的中文翻译文本...
-
----
+这是视频中的中文翻译文本...
 
 **[01:23]**
 
 Next paragraph of English text...
 
-🇨🇳 下一段中文翻译...
-
----
+下一段中文翻译...
 ```
 
 **Whisper 模型选择建议**：
@@ -645,6 +637,8 @@ simplified_text = converter.convert(traditional_text)
 
 #### 操作流程
 
+> **⚠️ 严格按步骤顺序执行，不得跳步！** 必须完成步骤 0→1→2→3→4 的完整流程。尤其是**步骤 2（创建日期目录）不可跳过**——文档必须上传到当天日期命名的文件夹中，而不是直接上传到知识库根目录。如果跳过步骤 2 直接用 `root_entry_id` 作为上传目标，文档将错误地出现在根目录下。
+
 通过 lexiang MCP 工具，按以下步骤完成转存：
 
 **步骤 0：读取配置（含初始化检测）**
@@ -665,6 +659,50 @@ simplified_text = converter.convert(traditional_text)
 **步骤 3：去重检查**
 - 调用 `entry_list_children`（参数：`parent_id=<日期目录ID>`）查询该日期目录下已有的条目
 - 按「名称 + 类型」检查是否已存在同名文档，如果已存在则跳过上传并告知用户
+
+**步骤 3.5：非中文文章翻译（⚠️ 不可跳过）**
+
+在上传到乐享之前，**必须检测原文语言**。如果原文不是中文，则需要先翻译为**中英对照格式**后再归档。
+
+**语言检测规则**：
+- 读取 `<原文标题>.md` 的前 500 个字符，统计中文字符（Unicode 范围 `\u4e00-\u9fff`）占比
+- 中文字符占比 **≥ 30%** → 判定为中文文章，**跳过翻译**，直接进入步骤 4
+- 中文字符占比 **< 30%** → 判定为非中文文章，**执行翻译**
+
+**翻译排版格式（中英对照）**：
+- 按段落逐段翻译，每段原文紧跟对应中文翻译
+- **段落之间不加分隔线 `---`**，仅通过空行分隔
+- **中文翻译段落开头不加国旗 emoji（🇨🇳）**，直接以中文开始
+- 标题也需要翻译，保留原文标题 + 中文翻译标题
+- 列表项、引用块等结构元素同样逐条翻译
+- **保留原文中的图片引用**（`![](images/xxx.png)`），图片引用放在对应段落的上方或下方，确保图文对应关系不丢失
+
+```markdown
+# Original English Title
+# 中文翻译标题
+
+Original first paragraph text...
+
+第一段的中文翻译...
+
+![](images/img_01_xxx.png)
+
+Original second paragraph text...
+
+第二段的中文翻译...
+```
+
+**翻译方式（按优先级）**：
+1. **translate_article.py 脚本**（如果 `OPENAI_API_KEY` 可用）：
+   ```bash
+   python3 scripts/translate_article.py "<原文标题>.md" "<原文标题>_translated.md" --model gpt-4o-mini
+   ```
+2. **AI 助手直接翻译**（如果无 API Key）：由 Agent 在对话中逐段翻译全文，生成 `<原文标题>_translated.md`
+
+**翻译完成后**：
+- 本地保存两个文件：`<原文标题>.md`（原文）和 `<原文标题>_translated.md`（中英对照版）
+- **归档到乐享知识库的必须是翻译后的中英对照版本**（`_translated.md`），确保知识库中的内容对中文读者友好
+- 乐享文档标题使用：`<原文标题中文翻译>（<原文标题>）`，如：`AI 原型精通阶梯（The AI Prototyping Mastery Ladder）`
 
 **步骤 4：图文检测与上传**
 
@@ -741,7 +779,7 @@ simplified_text = converter.convert(traditional_text)
 **翻译策略**：
 - 使用 OpenAI `gpt-4o-mini`，分批翻译（每批 10 段），避免 token 超限
 - 翻译 prompt 要求"自然流畅的中文表达，专业术语保留英文并附中文注释"
-- 中英对照格式：每段先展示英文原文，紧跟中文翻译（以 🇨🇳 前缀标识），段间用分隔线
+- 中英对照格式：每段先展示英文原文，紧跟中文翻译，段间用空行分隔（不加分隔线和国旗 emoji）
 - **如果没有 OPENAI_API_KEY**：脚本会跳过翻译步骤，输出纯英文文字稿。此时可以由 AI 助手在对话中直接翻译全文，然后用 `md_to_page.py --entry-id` 更新乐享文档
 
 **上传乐享的关键决策**：
