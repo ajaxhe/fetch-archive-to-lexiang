@@ -72,13 +72,26 @@ python scripts/fetch_article.py fetch <URL> --output-dir <项目子目录> --cdp
 
 **CDP 模式前置条件**：确保 Chrome 浏览器已开启 CDP 远程调试端口：
 ```bash
-# 启动 Chrome（开启 CDP 远程调试端口 9222）
+# 方式1（推荐）：直接用带 CDP 的方式启动 Chrome
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 &
 
-# 验证 CDP 端口可连接
-curl -s http://localhost:9222/json/version
+# 方式2：如果 Chrome 已在运行，需要先关闭再以 CDP 模式重启
+# 脚本会自动尝试此操作，但可能需要用户手动确认
 ```
-> 如果 Chrome 已在运行但未开启 CDP，脚本会尝试优雅关闭 Chrome 后以 CDP 模式重启。
+
+> **⚠️ CDP 独立 profile 的已知限制**：
+> 
+> 脚本会使用独立的 CDP profile 目录（`~/.fetch_article/chrome_cdp_profile`），虽然会自动复制 Cookies 文件，但**以下登录态信息不会被同步**：
+> - `localStorage`（Substack 等 SPA 站点的会话 token）
+> - `Service Worker` 缓存
+> - `sessionStorage`
+>
+> **实际影响**：对于 Substack 等依赖 localStorage 的站点，仅靠 Cookies 复制可能无法完全还原登录态。脚本已通过 **Substack 登录态缓存**机制（`~/.substack/storage_state.json`）弥补此限制——首次登录后会保存完整的 Playwright storage state（含 Cookies + localStorage），后续抓取直接复用。
+>
+> **最佳实践**：
+> 1. **首次使用 Substack 前**，先运行 `python scripts/fetch_article.py login` 完成登录并缓存
+> 2. 如果 CDP 模式下登录态校验失败，脚本会自动暂停并引导用户在弹出的 Chrome 窗口中登录
+> 3. 登录成功后会自动刷新缓存，后续抓取无需重复登录
 
 **工作原理**：
 1. 自动从 Chrome 浏览器的 Cookie 数据库提取目标域名的登录 cookies
@@ -663,7 +676,16 @@ simplified_text = converter.convert(traditional_text)
 - 调用 `entry_list_children`（参数：`parent_id=<日期目录ID>`）查询该日期目录下已有的条目
 - 按「名称 + 类型」检查是否已存在同名文档，如果已存在则跳过上传并告知用户
 
-**步骤 3.5：非中文文章翻译（⚠️ 不可跳过）**
+**步骤 3.5：非中文文章翻译（🚨 强制检查，不可跳过）**
+
+> **⚠️ 重要**：无论文章是通过 `fetch_article.py`、`web_fetch` 还是其他方式获取，在上传到乐享之前**都必须经过语言检测和翻译步骤**。这是一个**强制检查点**，不存在任何可以跳过的"简化路径"。
+>
+> **常见遗漏场景**：
+> 1. ❌ 用 `web_fetch` 抓取后直接转 PDF 上传 → 英文原文未翻译
+> 2. ❌ 觉得文章"看起来不长"就跳过翻译 → 知识库中留下纯英文文档
+> 3. ❌ 翻译脚本不可用就放弃翻译 → 应该由 Agent 直接在对话中翻译
+>
+> **正确做法**：每篇文章上传前，**必须先执行语言检测**，非中文则翻译后再上传。
 
 在上传到乐享之前，**必须检测原文语言**。如果原文不是中文，则需要先翻译为**中英对照格式**后再归档。
 
