@@ -147,8 +147,22 @@ async def _ensure_chrome_cdp(port: int = CDP_PORT) -> bool:
     # Always use a dedicated CDP profile directory (NOT the default Chrome dir).
     # macOS Chrome refuses to open the CDP port when using the default
     # user-data-dir.
+    # However, we copy cookies from the real profile to the CDP profile
+    # to preserve login state.
     cdp_profile_dir = str(Path.home() / ".fetch_article" / "chrome_cdp_profile")
     os.makedirs(cdp_profile_dir, exist_ok=True)
+
+    # Copy cookies from the real Chrome profile to CDP profile if available
+    real_chrome_dir = _get_chrome_user_data_dir()
+    real_cookies = Path(real_chrome_dir) / "Default" / "Cookies"
+    cdp_cookies = Path(cdp_profile_dir) / "Default" / "Cookies"
+    if real_cookies.exists():
+        os.makedirs(str(cdp_cookies.parent), exist_ok=True)
+        try:
+            shutil.copy2(str(real_cookies), str(cdp_cookies))
+            print(f"🍪 已同步真实 Chrome 的 cookies 到 CDP profile")
+        except Exception as e:
+            print(f"⚠️  Cookies 同步失败: {e}")
 
     cmd = [
         chrome_path,
@@ -369,6 +383,10 @@ def _is_substack_site(url: str) -> bool:
         "substack.com",
         "lennysnewsletter.com",
         "www.lennysnewsletter.com",
+        "creatoreconomy.so",
+        "sachinrekhi.com",
+        "www.sachinrekhi.com",
+        "speedrun.substack.com",
     ]
     # Check direct match or *.substack.com pattern
     for d in substack_domains:
@@ -1244,6 +1262,11 @@ async def fetch_article(
         print(f"🛡️  {domain} 使用 Cloudflare 保护，自动切换到 CDP 模式")
         use_cdp = True
 
+    # Auto-upgrade to CDP mode for Substack sites (avoid automation detection)
+    if not use_cdp and is_substack:
+        print(f"📰 检测到 Substack 站点，自动切换到 CDP 模式（避免自动化检测）")
+        use_cdp = True
+
     pw_manager = None
 
     # ══════════════════════════════════════════════════════════════════
@@ -1265,6 +1288,60 @@ async def fetch_article(
             await _wait_for_cloudflare(page)
 
             await page.wait_for_timeout(3000)
+
+            # === Substack login check in CDP mode ===
+            if is_substack:
+                print("🔍 Substack 登录态校验...")
+                login_status = await _check_substack_login(page)
+                print(f"   {login_status['detail']}")
+
+                if not login_status["logged_in"]:
+                    print("\n" + "=" * 60)
+                    print("🔐 Substack 未登录！请在 Chrome 浏览器中完成以下操作：")
+                    print(f"   1. 在 Chrome 中打开: {url}")
+                    print("   2. 点击右上角 'Sign in' 登录你的 Substack 账号")
+                    print("   3. 确认登录成功（右上角显示头像）")
+                    print("   4. 回到终端输入 'y' 继续")
+                    print("=" * 60)
+
+                    max_attempts = 5
+                    for attempt in range(max_attempts):
+                        try:
+                            user_input = await asyncio.get_event_loop().run_in_executor(
+                                None, lambda: input("\n⏳ 登录完成后输入 'y' 继续（'q' 取消）: ")
+                            )
+                        except (EOFError, KeyboardInterrupt):
+                            print("\n⚠️  stdin 不可用，等待 30 秒后自动检测...")
+                            await page.wait_for_timeout(30000)
+                            user_input = "y"
+
+                        if user_input.strip().lower() == "q":
+                            print("⚠️  跳过登录，将抓取当前可见内容")
+                            break
+
+                        if user_input.strip().lower() == "y":
+                            print("🔄 重新加载页面并验证...")
+                            try:
+                                await page.goto(url, wait_until="networkidle", timeout=60000)
+                            except Exception:
+                                await page.wait_for_timeout(5000)
+                            await page.wait_for_timeout(3000)
+
+                            login_status = await _check_substack_login(page)
+                            print(f"   {login_status['detail']}")
+                            if login_status["logged_in"]:
+                                print("✅ 登录验证通过！")
+                                break
+                            else:
+                                remaining = max_attempts - attempt - 1
+                                if remaining > 0:
+                                    print(f"⚠️  验证未通过（还有 {remaining} 次机会）")
+                                else:
+                                    print("⚠️  多次验证未通过，将抓取当前可见内容")
+                else:
+                    # Logged in — check if paywall still blocks full content
+                    if login_status["has_paywall"]:
+                        print("⚠️  已登录但仍检测到付费墙（可能需要付费订阅此频道）")
 
             # Scroll to load lazy content
             await _scroll_page(page, is_wechat=is_wechat)
