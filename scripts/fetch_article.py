@@ -234,20 +234,51 @@ async def _ensure_chrome_cdp(port: int = CDP_PORT) -> bool:
 
 
 async def _create_cdp_context(playwright):
-    """Connect to real Chrome via CDP and return (browser, context, page)."""
+    """Connect to real Chrome via CDP and return (browser, context, page).
+    
+    Falls back to Playwright's bundled Chromium with Chrome cookie injection
+    if CDP connection fails (e.g., Chrome 147+ removed setDownloadBehavior).
+    """
+    # Try CDP first
     launched = await _ensure_chrome_cdp(CDP_PORT)
-    if not launched:
-        raise RuntimeError("无法连接到 Chrome CDP 端口，请确保 Chrome 可用")
+    if launched:
+        try:
+            browser = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
+            if browser.contexts:
+                context = browser.contexts[0]
+                print("🔗 已连接到真实 Chrome（复用已有上下文）")
+            else:
+                context = await browser.new_context(viewport={"width": 1440, "height": 900})
+                print("🔗 已连接到真实 Chrome（新建上下文）")
+            page = await context.new_page()
+            return browser, context, page
+        except Exception as e:
+            print(f"⚠️  CDP 连接失败: {str(e)[:100]}")
+            print("🔄 回退到 Playwright Chromium + Chrome Cookie 注入模式...")
 
-    browser = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
-    if browser.contexts:
-        context = browser.contexts[0]
-        print("🔗 已连接到真实 Chrome（复用已有上下文）")
-    else:
-        context = await browser.new_context(viewport={"width": 1440, "height": 900})
-        print("🔗 已连接到真实 Chrome（新建上下文）")
-
+    # Fallback: use Playwright's bundled Chromium with cookie injection
+    browser = await playwright.chromium.launch(
+        headless=False,
+        args=[
+            "--disable-blink-features=AutomationControlled",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ],
+    )
+    context = await browser.new_context(viewport={"width": 1440, "height": 900})
+    
+    # Inject cookies from real Chrome for common Substack domains
+    for domain in ["substack.com", "creatoreconomy.so", "sachinrekhi.com", "speedrun.substack.com"]:
+        try:
+            cookies = get_chrome_cookies_for_domain(domain)
+            if cookies:
+                await context.add_cookies(cookies)
+                print(f"🍪 已注入 {domain} 的 {len(cookies)} 个 cookies")
+        except Exception:
+            pass
+    
     page = await context.new_page()
+    print("🔗 已启动 Playwright Chromium（Cookie 注入回退模式）")
     return browser, context, page
 
 

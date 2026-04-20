@@ -766,7 +766,15 @@ Original second paragraph text...
 
 检查 `<原文标题>.md` 文件同目录下是否存在 `images/` 目录且包含图片文件：
 
-- **有图片（图文文章）** → 先调用 `scripts/md_to_pdf.py` 将 Markdown 转换为 PDF（嵌入图片），然后通过三步上传流程上传 PDF：
+- **有图片（图文文章）** → **【推荐】使用 `scripts/md_to_page.py` 将 Markdown 图文导入为在线文档**（图片内嵌到正文对应位置，支持编辑和划词评论）：
+  ```bash
+  python3 scripts/md_to_page.py "<原文标题>.md" \
+    --parent-id <日期目录ID> --name "<原文标题>" \
+    --token "$LEXIANG_TOKEN" --company-from "$COMPANY_FROM"
+  ```
+  脚本会自动：按图片位置拆分 markdown → 分段导入文字（直传原始 markdown，不做 base64 编码）→ 逐张上传图片到 COS → 在正确位置插入 image block。
+  
+  **降级方案**：如果 `md_to_page.py` 失败（如 MCP API 异常），回退到 PDF 方案：先调用 `scripts/md_to_pdf.py` 转为 PDF，再通过三步上传流程上传：
   1. `file_apply_upload`（参数：`parent_entry_id=<日期目录ID>`, `name="<原文标题>.pdf"`, `size=<文件字节数>`, `mime_type="application/pdf"`, `upload_type="PRE_SIGNED_URL"`）
   2. 使用 `curl -X PUT` 将 PDF 文件上传到返回的 `upload_url`（这是预签名 URL 直传 COS，不涉及认证信息）
   3. `file_commit_upload`（参数：`session_id=<上一步返回的session_id>`）
@@ -797,11 +805,41 @@ Original second paragraph text...
 |------|------|
 | `scripts/fetch_article.py` | 付费/登录墙文章全文抓取脚本（Chrome cookies + Playwright，Substack 登录态缓存，输出 Markdown + 图片 + 元信息 JSON） |
 | `scripts/md_to_pdf.py` | Markdown 转 PDF 脚本（使用 pymupdf，嵌入本地图片，正确渲染中文，支持标题回退和拆行标题修复） |
+| `scripts/md_to_page.py` | **【推荐】** Markdown 图文导入乐享在线文档脚本。按图片位置将 markdown 拆分为 text/image 交替段落，分段导入到乐享 page（文字用 entry_import_content_to_entry 直传原始 markdown，图片用 block_apply_block_attachment_upload + curl PUT + block_create_block_descendant 三步上传）。⚠️ 脚本通过 HTTP JSON-RPC 直连乐享 MCP API，content 字段**不需要 base64 编码**（直传原始 markdown 字符串）。支持任意长度文章，图片内嵌到正文对应位置，生成可编辑、可划词评论的在线文档。用法：`python3 scripts/md_to_page.py <md_file> --entry-id <ID> --token <TOKEN> --company-from <CF>` 或 `--parent-id <PID> --name "标题"` 创建新页面 |
 | `scripts/yt_download_transcribe.py` | YouTube 视频下载 + Whisper 转录 + AI 翻译脚本（yt-dlp 下载、ffmpeg 提取音频、Whisper 转录、OpenAI 翻译为中英对照 Markdown）。也可用于播客音频转录（跳过视频下载步骤） |
+| `scripts/translate_gemini.py` | 使用 Gemini API 将英文 Markdown 翻译为中英对照格式。按 ~4K 字符分段翻译，每段间隔 2 秒避免限频。模型：`gemini-2.5-flash`。需要 `GEMINI_API_KEY` 环境变量。用法：`python3 scripts/translate_gemini.py`（翻译后生成 `_translated.md` 文件） |
 
 > **注意**：乐享知识库操作不再通过独立脚本（`save_to_lexiang.sh`/`upload_yt_to_lexiang.sh`）完成，而是由大模型通过 **lexiang MCP 工具**直接执行。不同 Agent 产品（OpenClaw、CodeBuddy、Claude Desktop 等）各自管理 MCP 连接，但调用的工具名称和参数完全一致。
 
 ## 经验总结
+
+### 在线文档图文导入（md_to_page.py）
+
+**核心方案**：Python 脚本通过 HTTP JSON-RPC 直连乐享 MCP API，按图片位置将 markdown 拆分为 text/image 交替段落，逐段导入。
+
+**为什么不走 IDE 的 MCP 工具调用**：
+- IDE MCP 工具调用有参数长度限制，45K 字符的 markdown base64 编码后 62K，无法一次性传递
+- Python 脚本直连 HTTP JSON-RPC 没有此限制，按 ~15K 字符分段传输即可
+
+**关键踩坑（⚠️ 重要）**：
+1. **不要做 base64 编码**：通过 HTTP JSON-RPC 直连时，`entry_import_content_to_entry` 的 content 字段直传原始 markdown 字符串。如果做了 base64 编码，乐享会把 base64 字符串当成纯文本存储，页面显示为乱码。只有通过 IDE MCP 协议调用时才需要 base64
+2. **图片需逐张插入**：`block_create_block_descendant` 一次传多张图片的 block 会失败，必须一张一张来
+3. **文字分段追加**：第一段用 `force_write=true` 覆盖，后续段用 `force_write=false` 追加到末尾
+4. **图片位置要正确**：先按原文中 `![](images/xxx.jpg)` 的位置拆分 markdown，确保文字和图片按原文顺序交替插入
+5. **乐享文档名称**：要与文章原标题一致，创建时通过 `--name` 指定，或创建后用 `entry_rename_entry` 修改
+
+**翻译注意事项**：
+- **所有英文文章默认必须翻译为中英对照格式再归档**，不可跳过
+- 翻译脚本 `translate_gemini.py` 使用 Gemini API（模型：`gemini-2.5-flash`），按 ~4K 字符分段翻译
+- Gemini API `gemini-2.0-flash` 已下线，务必使用 `gemini-2.5-flash` 或更新的模型
+- 翻译完成后用 `md_to_page.py --entry-id <ID>` 覆盖更新在线文档
+- 如果没有 Gemini API Key 也没有 OpenAI API Key，由 AI 助手在对话中翻译后写入文件
+
+**自测清单**（发布前必须完成）：
+- [ ] 通过 `entry_describe_ai_parse_content` 验证文字内容可读（非 base64 乱码）
+- [ ] 通过 `block_list_block_children` 验证图片 block 存在且有 file_id
+- [ ] 验证文档名称与文章标题一致
+- [ ] 验证中英对照格式（英文在前，中文翻译紧跟其后）
 
 ### YouTube 视频下载与转录
 
@@ -1093,3 +1131,7 @@ await page.pdf({
 | 展示给用户的乐享链接无法访问 | 使用了 MCP API 域名 `mcp.lexiang-app.com` 而非用户可访问的前端域名 | 所有展示给用户的链接必须按 `config.json` 中 `page_url_template` 格式生成（默认为 `https://lexiangla.com/pages/<entry_id>`） |
 | PDF 中缺少标题 | `fetch_article.py` 的 `processNode` 将正文 `<h1>` 转为 `# 标题`，与手动拼接的元信息头标题重复；某些网站（如 Lenny's Newsletter）标题在 `articleEl` 外部导致 MD 文件第一行 `# ` 为空 | 已修复：(1) `processNode` 中自动去重正文中与已提取 title 相同的第一个 h1 (2) 标题提取增加 `og:title`、`meta[name="title"]`、`document.title` 多策略回退 (3) `md_to_pdf.py` 增加标题回退——当 MD 中无有效 h1 时从 `article_meta.json` 补充 |
 | PDF 中缺少子标题 | 某些网站的 HTML 结构导致 `### # 从 Tab 到 Agents` 被拆为两行：`### #` 和 `从 Tab 到 Agents`，`parse_markdown` 将 `#` 视为无效标题丢弃 | 已修复：`parse_markdown` 增加拆行标题检测——当标题文字为 `#` 或空时，检查下一行是否为实际标题文字并合并 |
+| md_to_page.py 导入后文字显示为 base64 乱码 | 脚本通过 HTTP JSON-RPC 直连乐享 MCP API 时，对 content 做了多余的 base64 编码。乐享 MCP 的 base64 要求仅针对 IDE 侧 MCP 协议 | 已修复：去掉 `import_content` 函数中的 `base64.b64encode()`，直传原始 markdown。⚠️ 通过 HTTP JSON-RPC 直连时**永远不要做 base64 编码** |
+| md_to_page.py 批量插入图片 block 失败 | `block_create_block_descendant` 一次传多张图片的 descendant 数组会超时或报错 | 改为逐张插入，每次只传一个 image block 的 descendant + children |
+| Gemini API 调用报 404 模型不存在 | `gemini-2.0-flash` 模型已下线 | 使用 `gemini-2.5-flash` 替代。可通过 `curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"` 查看当前可用模型 |
+| 英文文章未翻译就归档 | 跳过了步骤 3.5 的语言检测和翻译 | **所有英文文章必须翻译为中英对照后再归档**，这是强制步骤不可跳过。使用 `translate_gemini.py`（Gemini API）或 `translate_article.py`（OpenAI API）翻译，翻译完用 `md_to_page.py --entry-id` 覆盖更新 |
