@@ -731,7 +731,43 @@ Original second paragraph text...
 - **归档到乐享知识库的必须是翻译后的中英对照版本**（`_translated.md`），确保知识库中的内容对中文读者友好
 - 乐享文档标题使用：`<原文标题中文翻译>（<原文标题>）`，如：`AI 原型精通阶梯（The AI Prototyping Mastery Ladder）`
 
-**步骤 3.6：页面内嵌视频检测与链接附加（⚠️ 不可跳过）**
+**步骤 3.7：评价信息处理（可选）**
+
+如果在转存前用户提供了对文章的评价（例如："这篇文章好在：1）... 2）..."），需要在上传时自动添加评价信息：
+
+1. **检测评价信息**：在对话中识别用户是否提供了评价内容（关键词：好在、评价、优点、建议等）
+2. **保存评价内容**：将评价信息保存到临时文件（如 `/tmp/evaluation.txt`）
+3. **传入脚本参数**：调用 `md_to_page.py` 时，添加 `--evaluation-file /tmp/evaluation.txt` 参数
+4. **脚本自动处理**：`md_to_page.py` 会自动在文档顶部插入评价信息（格式为 blockquote，乐享可能自动转换为 callout 组件）
+
+**对于非在线文档格式（如视频）**：
+- 由于 lexiang MCP 工具中**没有创建评论的 API**（只有查询评论的 `comment_list_comments` 和 `comment_describe_comment`），暂时无法自动添加评论到视频文件
+- **建议**：转存完成后，手动在乐享中添加评论
+
+**示例：用户提供评价后的处理流程**
+```bash
+# 1. 将用户评价保存到临时文件
+cat > /tmp/evaluation.txt << 'EOF'
+这篇文章好在：
+1）把智能体Agent做了分类，每个分类定义了对应是适用场景；
+2）列举了详实的案例说明；
+3）通过构建的复杂度、技术架构、实现时长、运行成本、衡量成功等几个维度来系统化地综合判断Agent落地的优先级
+4）未来关于Agent选型上，能够提供系统性的参考建议
+EOF
+
+# 2. 调用 md_to_page.py，传入评价文件
+python3 scripts/md_to_page.py "<原文标题>_translated.md" \
+  --parent-id <日期目录ID> --name "<文档标题>" \
+  --evaluation-file /tmp/evaluation.txt \
+  --token "$LEXIANG_TOKEN" --company-from "$COMPANY_FROM"
+```
+
+**评价信息格式说明**：
+- 脚本会将评价信息格式化为 blockquote（以 `>` 开头的 Markdown 格式）
+- 在乐享在线文档中，blockquote 可能被自动渲染为 callout 组件（带有左侧竖线或背景色）
+- 如果需要真正的 callout 组件（特殊 block 类型），需要通过 `block_create_block_descendant` API 创建，但需要先了解 callout 的 block 结构
+
+**步骤 3.8：页面内嵌视频检测与链接附加（⚠️ 不可跳过）**
 
 在生成 PDF 或上传之前，**必须检测页面中是否包含嵌入视频**。嵌入视频（如 Wistia、YouTube、Vimeo、Loom 等 iframe 嵌入）在转为 PDF 时会完全丢失，因此需要将视频链接以文本形式附加到文档末尾，确保知识库读者能找到并观看原始视频。
 
@@ -1145,3 +1181,8 @@ await page.pdf({
 | md_to_page.py 批量插入图片 block 失败 | `block_create_block_descendant` 一次传多张图片的 descendant 数组会超时或报错 | 改为逐张插入，每次只传一个 image block 的 descendant + children |
 | Gemini API 调用报 404 模型不存在 | `gemini-2.0-flash` 模型已下线 | 使用 `gemini-2.5-flash` 替代。可通过 `curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"` 查看当前可用模型 |
 | 英文文章未翻译就归档 | 跳过了步骤 3.5 的语言检测和翻译 | **所有英文文章必须翻译为中英对照后再归档**，这是强制步骤不可跳过。使用 `translate_gemini.py`（Gemini API）或 `translate_article.py`（OpenAI API）翻译，翻译完用 `md_to_page.py --entry-id` 覆盖更新 |
+| `translate_gemini.py` 报错 FileNotFoundError | 脚本硬编码了源文件路径，不读取命令行参数 | 已修复：改用 `sys.argv[1]` 读取输入文件，`sys.argv[2]` 读取输出文件，默认输出 `_translated.md` |
+| `md_to_page.py` 执行报错 IndentationError | 添加 `--evaluation`/`--evaluation-file` 参数时缩进不一致 | 已修复：参数定义须与上方 `--base-url` 对齐；Python 严禁混用 tab 和空格 |
+| `fetch_article.py` 下载的图片在 `md_to_page.py` 中提示 NOT FOUND | 下载保存的文件名与写入 Markdown 的引用不一致（如 `img_06_1c1cfc4c.gif` vs `img_06_1c1cfc42.gif`）| `fetch_article.py` 的 `process_images` 函数中，保存到 `images/` 的文件名与替换 Markdown `src` 时的文件名必须完全一致；建议统一使用 `hash[:8]` + 原始扩展名，并在替换后打印映射表方便排查 |
+| 乐享 MCP 更新 token 后工具仍报 "not found" | `mcp.json` 配置已更新，但 MCP 服务未重新加载 | **必须重启 WorkBuddy**（或禁用再重新启用 MCP 服务），新的 token 才能生效 |
+| `md_to_page.py` 新增评价信息功能 | 需要在文档顶部插入用户评价（callout 组件）| 已添加 `--evaluation`（短文本）和 `--evaluation-file`（文件路径）两个参数；评价内容会以 blockquote 格式插入文档顶部，乐享会自动渲染为 callout 组件 |

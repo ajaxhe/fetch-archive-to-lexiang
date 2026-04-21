@@ -64,6 +64,8 @@ def main():
     parser.add_argument("--token", default=os.environ.get("LEXIANG_TOKEN", ""))
     parser.add_argument("--company-from", default=os.environ.get("COMPANY_FROM", ""))
     parser.add_argument("--base-url", default=os.environ.get("MCP_BASE_URL", "https://mcp.lexiang-app.com"))
+    parser.add_argument("--evaluation", default="", help="Evaluation text to add at top (short text, supports \\n for newline)")
+    parser.add_argument("--evaluation-file", default="", help="File path containing evaluation text (long text, supports multiline)")
     args = parser.parse_args()
 
     if not args.token: sys.exit("Error: --token or LEXIANG_TOKEN required")
@@ -83,6 +85,27 @@ def main():
 
     with open(args.md_path, "r") as f:
         content = f.read()
+
+    # 处理评价信息（在顶部插入）
+    eval_text = ""
+    if args.evaluation:
+        eval_text = args.evaluation.replace("\\n", "\n")
+    elif args.evaluation_file:
+        if os.path.exists(args.evaluation_file):
+            with open(args.evaluation_file, "r", encoding="utf-8") as f:
+                eval_text = f.read()
+        else:
+            print(f"Warning: evaluation file not found: {args.evaluation_file}")
+
+    if eval_text:
+        # 格式化为 blockquote，乐享可能自动转换为 callout 组件
+        lines = eval_text.strip().split("\n")
+        blockquote = "> **📝 凡哥的评价**\n>\n"
+        for line in lines:
+            blockquote += "> " + line + "\n"
+        blockquote += "\n---\n\n"
+        content = blockquote + content
+        print(f"Added evaluation at top ({len(eval_text)} chars)")
 
     img_dir = os.path.join(os.path.dirname(os.path.abspath(args.md_path)), "images")
     img_pattern = r"!\[\]\(images/(img_\d+_[a-f0-9]+\.\w+)\)"

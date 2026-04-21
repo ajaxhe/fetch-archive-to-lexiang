@@ -42,8 +42,12 @@ def translate_chunk(text):
     return None
 
 def main():
-    src = os.path.join(os.path.dirname(__file__),
-        "Reluctantly Influential - Inside Lenny Rachitsky's Demandingly Chill Life.md")
+    if len(sys.argv) < 2:
+        print("Usage: python3 translate_gemini.py <input_md> [output_md]")
+        sys.exit(1)
+    
+    src = sys.argv[1]
+    dst = sys.argv[2] if len(sys.argv) > 2 else src.replace(".md", "_translated.md")
     
     with open(src, "r") as f:
         content = f.read()
@@ -76,13 +80,11 @@ def main():
         time.sleep(2)  # Rate limit
     
     output = "\n\n".join(translated_parts)
-    out_path = os.path.join(os.path.dirname(__file__),
-        "Reluctantly Influential - Inside Lenny Rachitsky's Demandingly Chill Life_translated.md")
     
-    with open(out_path, "w") as f:
+    with open(dst, "w") as f:
         f.write(output)
     
-    print(f"\nDone! Translated file: {out_path}")
+    print(f"\nDone! Translated file: {dst}")
     print(f"Original: {len(content)} chars -> Translated: {len(output)} chars")
 
 if __name__ == "__main__":
