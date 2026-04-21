@@ -420,20 +420,46 @@ simplified_text = converter.convert(traditional_text)
 ```markdown
 # 播客标题
 
-**播客**: 节目名称
-**平台**: 小宇宙FM
-**时长**: 01:03:47
-**原始链接**: https://www.xiaoyuzhoufm.com/episode/xxx
-**转录语言**: zh
+> 播客：节目名 | 平台：小宇宙FM
+> 嘉宾：xxx | 主播：xxx
+> 发布日期：YYYY-MM-DD | 时长：xx分xx秒
+> 原始链接：https://www.xiaoyuzhoufm.com/episode/xxx
+> 转录工具：Whisper base + OpenCC 繁简转换
 
 ---
 
-## 文字稿
+## Part 1：章节标题
 
-**[00:00]** 第一段转录文本...
+**[00:00]** 第一段转录文本，由多个 Whisper segment 合并而成...
 
 **[01:23]** 第二段转录文本...
+
+## Part 2：章节标题
+
+**[15:30]** 第三段转录文本...
 ```
+
+**文字稿整理规范（🚨 必须遵守，避免格式混乱）**：
+
+> **核心原则**：Whisper 输出的 segments 是细碎的短句（通常每条1-5秒），必须**先合并为自然段落**，再插入章节标题和时间戳。直接按 segment 粒度插入标题会导致同一个标题在每个短句前重复出现。
+
+**段落合并策略**：
+1. 相邻 segment 间隔 < 2s 且累计时长 < 60s → 合并为同一段落
+2. 遇到句号、问号等句末标点 → 倾向断开为新段落
+3. 合并后的段落开头标注时间戳 `**[MM:SS]**`
+
+**章节标题插入策略（🚨 关键，避免重复）**：
+1. 从播客简介/shownotes 中提取章节时间线
+2. 将章节时间点转换为秒数，建立映射
+3. **每个标题只插入一次**：用 `inserted_headers = set()` 跟踪已插入的标题
+4. 在段落合并**完成后**，根据段落起始时间匹配最近的章节标题
+5. 匹配条件：`段落起始时间 >= 章节时间点` 且 `该标题尚未插入`
+
+**常见错误（必须避免）**：
+- ❌ 在每个 Whisper segment 级别插入章节标题 → 同一标题重复几十次
+- ❌ 用宽松时间容差匹配（如 `abs(start - ts) < 5`）→ 多个 segment 命中同一标题
+- ❌ 不跟踪已插入状态 → 标题被重复插入
+- ✅ 先合并 segments 为段落，再在段落级别插入标题，每个标题只插入一次
 
 **Step 4：上传到乐享知识库**
 
@@ -669,10 +695,27 @@ simplified_text = converter.convert(traditional_text)
 - 调用 `space_describe_space`（参数：`space_id=<config 中的 SPACE_ID>`）
 - 从返回结果中提取 `root_entry_id`
 
-**步骤 2：检查/创建当天日期目录**
-- 调用 `entry_list_children`（参数：`parent_id=<root_entry_id>`）查询根目录下的子条目
-- 查找是否已存在以当天日期命名（如 `2026-03-18`）的 `folder` 类型条目
-- 如不存在，调用 `entry_create_entry`（参数：`parent_entry_id=<root_entry_id>`, `name="2026-03-18"`, `entry_type="folder"`）创建
+**步骤 2：检查/创建当天日期目录（🚨 必须先查再建，禁止直接创建）**
+
+> **⚠️ 严禁跳过查询直接调用 `entry_create_entry`！** 必须先用 `entry_list_children` 查询根目录，确认目录不存在后才能创建。直接创建会导致同名目录重复。
+
+- **先查**：调用 `entry_list_children`（参数：`parent_id=<root_entry_id>`）查询根目录下的子条目
+- **匹配**：在返回的 entries 中查找是否已存在以当天日期命名（如 `2026-03-18`）的 `folder` 类型条目
+- **已存在** → 直接使用该条目的 `id` 作为目标目录，**跳过创建**
+- **不存在** → 调用 `entry_create_entry`（参数：`parent_entry_id=<root_entry_id>`, `name="2026-03-18"`, `entry_type="folder"`）创建
+
+```python
+# 正确写法示例（Python）
+entries = mcp_call('entry_list_children', {'parent_id': root_entry_id})['data']['entries']
+folder_id = None
+for e in entries:
+    if e['name'] == '2026-04-21' and e.get('entry_type') == 'folder':
+        folder_id = e['id']
+        break
+if not folder_id:
+    result = mcp_call('entry_create_entry', {...})
+    folder_id = result['data']['entry']['id']
+```
 
 **步骤 3：去重检查**
 - 调用 `entry_list_children`（参数：`parent_id=<日期目录ID>`）查询该日期目录下已有的条目
@@ -1186,3 +1229,5 @@ await page.pdf({
 | `fetch_article.py` 下载的图片在 `md_to_page.py` 中提示 NOT FOUND | 下载保存的文件名与写入 Markdown 的引用不一致（如 `img_06_1c1cfc4c.gif` vs `img_06_1c1cfc42.gif`）| `fetch_article.py` 的 `process_images` 函数中，保存到 `images/` 的文件名与替换 Markdown `src` 时的文件名必须完全一致；建议统一使用 `hash[:8]` + 原始扩展名，并在替换后打印映射表方便排查 |
 | 乐享 MCP 更新 token 后工具仍报 "not found" | `mcp.json` 配置已更新，但 MCP 服务未重新加载 | **必须重启 WorkBuddy**（或禁用再重新启用 MCP 服务），新的 token 才能生效 |
 | `md_to_page.py` 新增评价信息功能 | 需要在文档顶部插入用户评价（callout 组件）| 已添加 `--evaluation`（短文本）和 `--evaluation-file`（文件路径）两个参数；评价内容会以 blockquote 格式插入文档顶部，乐享会自动渲染为 callout 组件 |
+| 播客文字稿章节标题重复出现几十次 | 在 Whisper segment 级别（1-5秒粒度）插入章节标题，且用宽松时间容差匹配 `abs(start - ts) < 5`，导致多个 segment 都命中同一标题 | **必须先合并 segments 为段落（gap<2s, duration<60s），再在段落级别插入标题**。用 `inserted_headers = set()` 跟踪已插入标题，每个标题只插入一次 |
+| 日期目录重复创建 | 直接调用 `entry_create_entry` 而不先查询目录是否已存在 | **必须先用 `entry_list_children` 查询根目录**，匹配到同名 folder 则复用其 ID，不存在才创建。已在步骤 2 中加强约束 |
