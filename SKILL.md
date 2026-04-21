@@ -645,11 +645,13 @@ simplified_text = converter.convert(traditional_text)
 ```
 知识库根目录/
   2026-02-25/
-    文章标题A.pdf  (图文文章，文件上传)
+    文章标题A      (图文文章，在线文档 page 类型，图片内嵌)
     文章标题B      (纯文本文章，在线文档 page 类型)
   2026-02-26/
-    文章标题C.pdf
+    文章标题C      (在线文档 page 类型)
 ```
+
+> **⚠️ 默认格式**：所有文章（无论是否含图片）**统一使用在线文档（page）格式上传**。在线文档支持在乐享中直接编辑、划词评论、全文检索，体验远优于 PDF。PDF 仅作为降级方案（`md_to_page.py` 失败时）或用户明确要求时使用。
 
 #### 操作流程
 
@@ -762,11 +764,15 @@ Original second paragraph text...
 
 如果使用 Playwright 直接生成 PDF（非 `fetch_article.py` 抓取），应在 `page.pdf()` 之前通过 `page.evaluate()` 在页面底部注入视频链接信息块。
 
-**步骤 4：图文检测与上传**
+**步骤 4：上传到乐享（统一使用在线文档格式）**
+
+> **🚨 核心原则：所有文章默认使用在线文档（page）格式上传，不再默认转 PDF。**
+> 在线文档的优势：支持编辑、划词评论、全文检索、移动端阅读体验好。
+> PDF 仅在以下情况使用：(1) `md_to_page.py` 和 `entry_import_content` 都失败时的最终降级；(2) 用户明确要求 PDF 格式。
 
 检查 `<原文标题>.md` 文件同目录下是否存在 `images/` 目录且包含图片文件：
 
-- **有图片（图文文章）** → **【推荐】使用 `scripts/md_to_page.py` 将 Markdown 图文导入为在线文档**（图片内嵌到正文对应位置，支持编辑和划词评论）：
+- **有图片（图文文章）** → 使用 `scripts/md_to_page.py` 将 Markdown 图文导入为在线文档（图片内嵌到正文对应位置）：
   ```bash
   python3 scripts/md_to_page.py "<原文标题>.md" \
     --parent-id <日期目录ID> --name "<原文标题>" \
@@ -774,14 +780,18 @@ Original second paragraph text...
   ```
   脚本会自动：按图片位置拆分 markdown → 分段导入文字（直传原始 markdown，不做 base64 编码）→ 逐张上传图片到 COS → 在正确位置插入 image block。
   
-  **降级方案**：如果 `md_to_page.py` 失败（如 MCP API 异常），回退到 PDF 方案：先调用 `scripts/md_to_pdf.py` 转为 PDF，再通过三步上传流程上传：
+  **降级方案 A**：如果 `md_to_page.py` 失败 → 尝试用 `entry_import_content` 上传纯文本版（图片引用保留为 Markdown 链接，虽然图片不内嵌但文字内容完整可编辑）。
+  
+  **降级方案 B（最终降级）**：如果以上都失败 → 调用 `scripts/md_to_pdf.py` 转为 PDF，再通过三步上传流程上传：
   1. `file_apply_upload`（参数：`parent_entry_id=<日期目录ID>`, `name="<原文标题>.pdf"`, `size=<文件字节数>`, `mime_type="application/pdf"`, `upload_type="PRE_SIGNED_URL"`）
-  2. 使用 `curl -X PUT` 将 PDF 文件上传到返回的 `upload_url`（这是预签名 URL 直传 COS，不涉及认证信息）
+  2. 使用 `curl -X PUT` 将 PDF 文件上传到返回的 `upload_url`
   3. `file_commit_upload`（参数：`session_id=<上一步返回的session_id>`）
 
 - **无图片（纯文本文章）** → 使用 `entry_import_content` 创建为**在线文档（page 类型）**：
   - 参数：`space_id=<config 中的 SPACE_ID>`, `parent_id=<日期目录ID>`, `name="<原文标题>"`, `content=<Markdown文件内容>`, `content_type="markdown"`
   - 在线文档支持在乐享中直接编辑
+
+- **通过 `web_fetch` 抓取的文章（无本地图片文件）** → 直接使用 `entry_import_content` 创建在线文档，Markdown 内容中的外链图片在乐享中可能无法显示，但文字内容完整可编辑、可检索。
 
 **步骤 5：输出结果**
 - 按 `config.json` 中的 `lexiang.access_domain.page_url_template` 格式拼接文档链接，告知用户
@@ -793,9 +803,9 @@ Original second paragraph text...
 - **MCP 连接是前置条件**：必须先确认 lexiang MCP 已连接才能执行操作。不同 Agent 的连接方式不同，参见上方「乐享 MCP 工具的调用方式」
 - **访问链接域名**：展示给用户的链接一律按 `config.json` 中 `page_url_template` 格式生成，**不要**使用 `mcp.lexiang-app.com`
 - **上传前自动去重**：按「文档名称 + 文档类型」在目标日期目录下查重，避免重复上传
-- 图文文章自动转为 PDF 上传（嵌入图片），确保知识库中保留完整图文信息
-- 纯文本文章以**在线文档（page）**格式创建，可在乐享中直接编辑
-- PDF 转换依赖 `pymupdf` 库（`pip3 install pymupdf`），如未安装则回退为在线文档方式上传 Markdown
+- **默认使用在线文档（page）格式**：所有文章（含图文）统一以在线文档格式上传，支持编辑、检索、评论。PDF 仅作为最终降级方案
+- 纯文本文章直接用 `entry_import_content`，图文文章优先用 `md_to_page.py`（图片内嵌），降级用 `entry_import_content`（图片不内嵌但文字完整）
+- PDF 转换依赖 `pymupdf` 库（`pip3 install pymupdf`），仅在前两种方式都失败时使用
 - 如果同一天多次处理不同文章，它们会归入同一个日期目录下
 - 使用 `_mcp_fields` 参数可以减少返回数据量，如 `_mcp_fields=["id", "root_entry_id", "name"]`
 
