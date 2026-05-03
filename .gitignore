@@ -8,3 +8,9 @@ __pycache__/
 
 # Runtime config (contains user-specific sensitive settings)
 config.json
+
+# 乐享 OpenAPI 凭证（虽然默认存放在 ~/.lexiang/，不会出现在本仓库，
+# 但保险起见把常见误放位置都 ignore 掉）
+.lexiang/
+openapi.json
+token_cache.json
