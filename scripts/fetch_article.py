@@ -435,6 +435,13 @@ def _is_wechat_article(url: str) -> bool:
     return hostname in ("mp.weixin.qq.com", "weixin.qq.com")
 
 
+def _is_dedao_article(url: str) -> bool:
+    """Check if the URL is a Dedao (得到) article."""
+    parsed = urllib.parse.urlparse(url)
+    hostname = parsed.hostname or ""
+    return "dedao.cn" in hostname
+
+
 # Known Cloudflare-protected domains that typically require CDP mode
 _CLOUDFLARE_DOMAINS = {
     "openai.com",
@@ -766,11 +773,12 @@ def _convert_image_format(img_path: Path) -> bool:
     return False
 
 
-async def _scroll_page(page, is_wechat: bool = False):
+async def _scroll_page(page, is_wechat: bool = False, is_dedao: bool = False):
     """Scroll the page to trigger lazy-loaded content.
     
     For WeChat articles, uses a more thorough scrolling strategy to ensure
     all lazy-loaded images (data-src → src) are triggered.
+    For Dedao (SPA), waits longer for JS rendering.
     """
     if is_wechat:
         # WeChat uses IntersectionObserver for lazy-loading images.
@@ -812,7 +820,7 @@ async def _scroll_page(page, is_wechat: bool = False):
         await page.wait_for_timeout(2000)
 
 
-async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path, is_wechat: bool = False) -> str:
+async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path, is_wechat: bool = False, is_dedao: bool = False) -> str:
     """Extract article content, download images, convert to Markdown, and save.
     
     This is the shared extraction logic used by both CDP mode and cookie-injection mode.
@@ -827,14 +835,18 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
 
     # Extract article content
     print("📝 正在提取文章内容...")
-    article_data = await page.evaluate("""(isWechat) => {
+    article_data = await page.evaluate("""(args) => {
+        const isWechat = args.isWechat;
+        const isDedao = args.isDedao;
         // WeChat-specific selectors come first for priority matching
         const selectors = isWechat
             ? ['#js_content', '.rich_media_content', 'article']
-            : [
-                '.available-content', '.post-content', 'article .body',
-                'article', '.entry-content', '[class*="body"]'
-            ];
+            : isDedao
+                ? ['.iget-articles', 'article']
+                : [
+                    '.available-content', '.post-content', 'article .body',
+                    'article', '.entry-content', '[class*="body"]'
+                ];
         
         let articleEl = null;
         let maxLen = 0;
@@ -947,7 +959,7 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
             content: articleEl.innerText, 
             html: articleEl.innerHTML 
         };
-    }""", is_wechat)
+    }""", {"isWechat": is_wechat, "isDedao": is_dedao})
 
     title = article_data.get("title", "Untitled")
     print(f"📖 文章标题: {title}")
@@ -955,7 +967,9 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
 
     # Extract and download images
     print("🖼️  正在下载图片...")
-    image_elements = await page.evaluate("""(isWechat) => {
+    image_elements = await page.evaluate("""(args) => {
+        const isWechat = args.isWechat;
+        const isDedao = args.isDedao;
         let articleEl = null;
         if (isWechat) {
             // WeChat: use #js_content directly
@@ -973,7 +987,7 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
             }
         }
         if (!articleEl) {
-            const selectors = ['.available-content', '.post-content', 'article .body', 'article'];
+            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article'];
             let maxLen = 0;
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
@@ -1006,7 +1020,7 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
         
         return Array.from(imgs).map((img, i) => ({
             // For WeChat, prefer data-src (original high-res URL) over src (which may be a placeholder)
-            src: (isWechat ? (img.getAttribute('data-src') || img.src) : (img.src || img.getAttribute('data-src'))) || '',
+            src: (isWechat ? (img.getAttribute('data-src') || img.src) : (img.src || img.getAttribute('data-src'))) || '',  // isWechat from closure
             alt: img.alt || '',
             width: img.naturalWidth || img.width || 0,
             height: img.naturalHeight || img.height || 0,
@@ -1024,7 +1038,7 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
             }
             return true;
         });
-    }""", is_wechat)
+    }""", {"isWechat": is_wechat, "isDedao": is_dedao})
 
     image_map = {}
     for i, img_info in enumerate(image_elements):
@@ -1070,13 +1084,14 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
         const imageMap = args.imageMap;
         const extractedTitle = args.title;
         const isWechat = args.isWechat;
+        const isDedao = args.isDedao;
         
         let articleEl = null;
         if (isWechat) {
             articleEl = document.querySelector('#js_content') || document.querySelector('.rich_media_content');
         }
         if (!articleEl) {
-            const selectors = ['.available-content', '.post-content', 'article .body', 'article'];
+            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article'];
             let maxLen = 0;
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
@@ -1287,6 +1302,7 @@ async def fetch_article(
     base_domain = ".".join(domain.split(".")[-2:])
     is_substack = _is_substack_site(url)
     is_wechat = _is_wechat_article(url)
+    is_dedao = _is_dedao_article(url)
 
     # Auto-upgrade to CDP mode for Cloudflare-protected sites
     if not use_cdp and _is_cloudflare_likely(url):
@@ -1308,12 +1324,28 @@ async def fetch_article(
         async with async_playwright() as p:
             browser, context, page = await _create_cdp_context(p)
 
-            print(f"📥 正在加载页面: {url}")
-            try:
-                await page.goto(url, wait_until="networkidle", timeout=60000)
-            except Exception as e:
-                print(f"⚠️  页面加载超时，继续: {e}")
-                await page.wait_for_timeout(5000)
+            # Try to find existing tab with the target URL/domain, avoid re-navigation
+            target_page = None
+            target_url_lower = url.lower()
+            for ctx in browser.contexts:
+                for p2 in ctx.pages:
+                    page_url = p2.url or ""
+                    if target_url_lower in page_url.lower() or "dedao.cn" in page_url.lower():
+                        target_page = p2
+                        print(f"📄 复用已打开的标签页: {page_url[:80]}")
+                        break
+                if target_page:
+                    break
+
+            if target_page:
+                page = target_page
+            else:
+                print(f"📥 正在加载页面: {url}")
+                try:
+                    await page.goto(url, wait_until="networkidle", timeout=60000)
+                except Exception as e:
+                    print(f"⚠️  页面加载超时，继续: {e}")
+                    await page.wait_for_timeout(5000)
 
             # Wait for Cloudflare challenge if detected
             await _wait_for_cloudflare(page)
@@ -1375,10 +1407,10 @@ async def fetch_article(
                         print("⚠️  已登录但仍检测到付费墙（可能需要付费订阅此频道）")
 
             # Scroll to load lazy content
-            await _scroll_page(page, is_wechat=is_wechat)
+            await _scroll_page(page, is_wechat=is_wechat, is_dedao=is_dedao)
 
             # Extract content
-            result = await _extract_and_save(page, url, output_path, images_dir, is_wechat=is_wechat)
+            result = await _extract_and_save(page, url, output_path, images_dir, is_wechat=is_wechat, is_dedao=is_dedao)
 
             # Close the tab we opened (don't close the browser — it's the user's Chrome)
             await page.close()
@@ -1527,7 +1559,7 @@ async def fetch_article(
         await page.wait_for_timeout(3000)
 
         # Scroll to load lazy content
-        await _scroll_page(page, is_wechat=is_wechat)
+        await _scroll_page(page, is_wechat=is_wechat, is_dedao=is_dedao)
 
         # Check if paywall is still blocking
         paywall_check = await page.evaluate("""() => {
@@ -1548,7 +1580,7 @@ async def fetch_article(
             print("⚠️  仍被付费墙拦截，但会继续提取可见内容")
 
         # Extract content and save
-        result = await _extract_and_save(page, url, output_path, images_dir, is_wechat=is_wechat)
+        result = await _extract_and_save(page, url, output_path, images_dir, is_wechat=is_wechat, is_dedao=is_dedao)
 
         await browser.close()
         if pw_manager:
