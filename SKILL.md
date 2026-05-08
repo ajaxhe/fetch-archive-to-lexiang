@@ -429,7 +429,7 @@ print(f'Done: {len(result[\"segments\"])} segments')
 
 **Step 3：合并段落 + 繁简转换 + 生成 Markdown**
 
-使用与 YouTube 视频相同的段落合并逻辑（max_gap=2s, max_duration=60s）。
+使用与 YouTube 视频相同的段落合并逻辑（max_gap=1.5s, max_duration=30s，遇句末标点+gap>0.8s 断开）。
 
 **关键**：Whisper base 模型对中文普通话倾向输出繁体字，必须用 `opencc` 进行繁简转换：
 ```bash
@@ -470,9 +470,44 @@ simplified_text = converter.convert(traditional_text)
 > **核心原则**：Whisper 输出的 segments 是细碎的短句（通常每条1-5秒），必须**先合并为自然段落**，再插入章节标题和时间戳。直接按 segment 粒度插入标题会导致同一个标题在每个短句前重复出现。
 
 **段落合并策略**：
-1. 相邻 segment 间隔 < 2s 且累计时长 < 60s → 合并为同一段落
-2. 遇到句号、问号等句末标点 → 倾向断开为新段落
-3. 合并后的段落开头标注时间戳 `**[MM:SS]**`
+
+> **🚨 关键 bug 修复（2026-05-08）**：Whisper base 对中文输出几乎没有句号等标点，因此"句末标点断开"条件基本不会触发。**唯一有效的断开条件是 duration 和 gap**。必须确保 duration 计算正确：`duration = 当前 segment 的 end - 段落起始 cur_start`。
+
+1. 相邻 segment 间隔 > 1.0s → **强制断开**
+2. 累计时长 > 15s（`seg.end - cur_start > 15`）→ **强制断开**
+3. 遇到句号、问号等句末标点 + gap > 0.5s → 断开为新段落
+4. 合并后的段落开头标注时间戳 `**[MM:SS]**`
+
+**⚠️ 参数选择依据**：
+- `max_duration=15s` 而非 30s/60s：因为中文 Whisper 没有标点输出，只能靠 duration 强制切割。15s 约 200 字/段，阅读体验较好
+- `max_gap=1.0s`：对话中的自然停顿通常 > 1s
+- 目标：48 分钟播客应产出 150-200 段（平均 90-100 字/段）
+
+**合并代码参考**：
+```python
+paragraphs = []
+cur_text = ""
+cur_start = 0
+cur_end = 0
+
+for seg in segments:
+    start, end, text = seg["start"], seg["end"], seg["text"].strip()
+    if not text:
+        continue
+    if cur_text:
+        gap = start - cur_end
+        duration = end - cur_start  # ⚠️ 必须用 end 而非 cur_end
+        if duration > 15 or gap > 1.0:
+            paragraphs.append({"start": cur_start, "end": cur_end, "text": cur_text.strip()})
+            cur_text, cur_start, cur_end = text, start, end
+        else:
+            cur_text += text
+            cur_end = end
+    else:
+        cur_text, cur_start, cur_end = text, start, end
+if cur_text:
+    paragraphs.append({"start": cur_start, "end": cur_end, "text": cur_text.strip()})
+```
 
 **章节标题插入策略（🚨 关键，避免重复）**：
 1. 从播客简介/shownotes 中提取章节时间线
@@ -491,8 +526,36 @@ simplified_text = converter.convert(traditional_text)
 
 与 YouTube 视频处理相同的流程（通过 lexiang MCP 工具完成，**前提是 MCP 已连接**）：
 1. 获取知识库根节点 → 检查/创建日期目录
-2. 文字稿使用 `entry_import_content` 创建为**在线文档（page 类型）**
-3. 音频文件使用三步上传流程（`file_apply_upload` → `curl PUT` → `file_commit_upload`），注意 MIME 类型为 `audio/mp4`（m4a）或 `audio/mpeg`（mp3）
+2. 文字稿使用 `entry_import_content_to_entry` 创建为**在线文档（page 类型）**，**不要**直接上传 .md 文件（排版会乱，用户无法正常阅读）
+3. 音频文件**必须**使用 `upload_video_via_openapi.py --media-type audio`（走 OpenAPI VOD 路径），**不要**用 MCP 的 `file_apply_upload`（产生 entry_type=file，无法在线播放）
+
+**文字稿在线文档导入方法（🚨 分块导入，避免内容丢失）**：
+
+> **核心问题**：播客文字稿通常 15-25K chars，无法在单次 MCP 工具调用中传入全部内容。**必须分块导入**。
+
+**分块导入流程**：
+1. 先用 `entry_create_entry`（`entry_type="page"`）创建空白 page，获取 `entry_id`
+2. 将 markdown 内容按行分块，每块 ≤ 4000 chars（确保没有超长单行）
+3. **第一块**：`entry_import_content_to_entry`（`entry_id=<page_id>`, `force_write=true`, `content=<第一块>`）
+4. **后续块**：`entry_import_content_to_entry`（`entry_id=<page_id>`, `force_write=false`, `content=<后续块>`）— 追加到末尾
+5. 验证：调用 `entry_describe_ai_parse_content` 确认内容完整（检查最后一个时间戳是否接近播客总时长）
+
+**⚠️ 关键注意事项**：
+- 每块内容必须是完整的 markdown 结构（不要在标题或段落中间切断）
+- 如果文字稿中有单行超过 4000 chars 的情况（说明合并策略有 bug），需要回到 Step 3 修复合并逻辑
+- 48 分钟播客（~200 段 × ~100 字/段 = ~20K chars）通常需要分 5-6 块导入
+
+```bash
+# ✅ 正确：通过 OpenAPI 上传音频（产生 entry_type=audio，触发 VOD 转码可播放）
+python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
+    --space-id <space_id> \
+    --parent-entry-id <日期目录 entry_id> \
+    --media-type audio
+```
+
+> **🚨 关键踩坑（2026-05-08 实战验证）**：
+> - ❌ `file_apply_upload` + curl PUT + `file_commit_upload` → 产出 `entry_type=file`，音频**无法播放**
+> - ✅ `upload_video_via_openapi.py --media-type audio` → 产出 `entry_type=audio`，乐享自动 VOD 转码，**可在线播放**
 
 **播客 vs YouTube 的关键区别**：
 
