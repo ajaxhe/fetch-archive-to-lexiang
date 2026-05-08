@@ -948,12 +948,22 @@ python3 scripts/md_to_page.py "<原文标题>_translated.md" \
   ```
   脚本会自动：按图片位置拆分 markdown → 分段导入文字（直传原始 markdown，不做 base64 编码）→ 逐张上传图片到 COS → 在正确位置插入 image block。
   
-  **降级方案 A**：如果 `md_to_page.py` 失败 → 尝试用 `entry_import_content` 上传纯文本版（图片引用保留为 Markdown 链接，虽然图片不内嵌但文字内容完整可编辑）。
+  **降级方案 A（脚本无 token 时 — 通过 MCP connector 分块导入图文）**：
+  
+  当 `md_to_page.py` 因缺少 LEXIANG_TOKEN 无法运行时（如 mcp.json 中无 lexiang 配置，只有 connector 模式），改用以下流程：
+  1. `entry_create_entry`（`entry_type="page"`）创建空白 page
+  2. 将 markdown 去除本地图片引用后，分块（≤4000 chars/块）用 `entry_import_content_to_entry` 导入文字（第一块 force_write=true，后续 force_write=false）
+  3. 逐张上传关键图片（>50KB 的图表/数据图）：`block_apply_block_attachment_upload` → `curl PUT` → `block_create_block_descendant`（index=-1 追加到末尾）
+  4. 小装饰图（<10KB 的 icon/分隔线）可跳过
+  
+  > **⚠️ 得到 APP 文章特殊情况**：得到文章通常有 80-100+ 张图片，其中大部分是公式渲染图（3-10KB），真正有信息量的数据图表约 5-10 张（>50KB）。对得到文章，只上传 >50KB 的关键图片即可，不需要逐张上传所有图片。
   
   **降级方案 B（最终降级）**：如果以上都失败 → 调用 `scripts/md_to_pdf.py` 转为 PDF，再通过三步上传流程上传：
   1. `file_apply_upload`（参数：`parent_entry_id=<日期目录ID>`, `name="<原文标题>.pdf"`, `size=<文件字节数>`, `mime_type="application/pdf"`, `upload_type="PRE_SIGNED_URL"`）
   2. 使用 `curl -X PUT` 将 PDF 文件上传到返回的 `upload_url`
   3. `file_commit_upload`（参数：`session_id=<上一步返回的session_id>`）
+  
+  > **🚨 绝对禁止**：不要用 `file_apply_upload` 直接上传 .md 文件！.md 上传后在乐享中会丢失所有图片信息，用户看到的只是含 `![](images/xxx)` 引用的纯文本，毫无可读性。
 
 - **无图片（纯文本文章）** → 使用 `entry_import_content` 创建为**在线文档（page 类型）**：
   - 参数：`space_id=<config 中的 SPACE_ID>`, `parent_id=<日期目录ID>`, `name="<原文标题>"`, `content=<Markdown文件内容>`, `content_type="markdown"`
