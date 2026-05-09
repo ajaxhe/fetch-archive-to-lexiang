@@ -651,7 +651,7 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
    - `lexiang.target_space.space_name` = 从 `space_describe_space` 返回值获取的知识库名称
    - `lexiang.target_space.company_from` = 解析出的 company_from
    - `lexiang.access_domain.domain` = 解析出的域名
-   - `lexiang.access_domain.page_url_template` = `https://<domain>/pages/{entry_id}`
+   - `lexiang.access_domain.page_url_template` = `https://<domain>/pages/{entry_id}?company_from={company_from}`
    - `lexiang.access_domain.space_url_template` = `https://<domain>/spaces/{space_id}?company_from={company_from}`
    - `_initialized` = `true`
 2. 向用户确认配置结果：
@@ -680,6 +680,7 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
 | 不带 company_from 的链接 `https://lexiangla.com/spaces/xxx` | 提示：「链接中缺少 company_from 参数。请在乐享中重新复制完整链接（地址栏中通常会包含 ?company_from=xxx），或者访问 https://lexiangla.com/mcp 获取你的 COMPANY_FROM 值告诉我。」|
 | 纯 space_id `b6013f6492894a29abbd89d5f2e636c6` | 提示：「请提供完整的知识库链接（包含 company_from 参数），我需要从链接中同时获取知识库 ID 和企业标识。」|
 | 页面链接 `https://lexiangla.com/pages/xxx` | 提示：「这是一个页面链接，请提供知识库链接（格式：https://lexiangla.com/spaces/xxx?company_from=yyy）。你可以在乐享中进入目标知识库首页，复制地址栏链接。」|
+| 返回的文档链接打不开/无权限 | 链接中缺少 `company_from` 参数。页面链接必须带 `?company_from=xxx`，格式：`https://lexiangla.com/pages/<entry_id>?company_from=<company_from>` |
 
 ##### 配置结构
 
@@ -694,7 +695,7 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
     },
     "access_domain": {
       "domain": "lexiangla.com",
-      "page_url_template": "https://lexiangla.com/pages/{entry_id}",
+      "page_url_template": "https://lexiangla.com/pages/{entry_id}?company_from={company_from}",
       "space_url_template": "https://lexiangla.com/spaces/{space_id}?company_from={company_from}"
     }
   }
@@ -952,11 +953,28 @@ python3 scripts/md_to_page.py "<原文标题>_translated.md" \
   
   当 `md_to_page.py` 因缺少 LEXIANG_TOKEN 无法运行时（如 mcp.json 中无 lexiang 配置，只有 connector 模式），改用以下流程：
   1. `entry_create_entry`（`entry_type="page"`）创建空白 page
-  2. 将 markdown 去除本地图片引用后，分块（≤4000 chars/块）用 `entry_import_content_to_entry` 导入文字（第一块 force_write=true，后续 force_write=false）
-  3. 逐张上传关键图片（>50KB 的图表/数据图）：`block_apply_block_attachment_upload` → `curl PUT` → `block_create_block_descendant`（index=-1 追加到末尾）
-  4. 小装饰图（<10KB 的 icon/分隔线）可跳过
+  2. 将 markdown **去除本地图片引用**（`![](images/xxx)`）后，分块（≤4000 chars/块）用 `entry_import_content_to_entry` 导入文字（第一块 force_write=true，后续 force_write=false 追加）
+  3. **逐张上传关键图片**（>50KB 的图表/概念图/配图）到文档对应位置：
+     - `block_apply_block_attachment_upload`（传 entry_id + name + size + mime_type）→ 获得 `session_id` + `upload_url`
+     - `curl -X PUT "<upload_url>" -H "Content-Type: <mime>" -H "Content-Length: <size>" --data-binary @<文件路径>` → 上传到 COS
+     - `block_create_block_descendant`（传 entry_id + parent_block_id + index + image block with session_id）→ 在指定位置插入图片
+  4. 小装饰图/公式图（<50KB 的 icon/分隔线/SVG）可跳过
   
-  > **⚠️ 得到 APP 文章特殊情况**：得到文章通常有 80-100+ 张图片，其中大部分是公式渲染图（3-10KB），真正有信息量的数据图表约 5-10 张（>50KB）。对得到文章，只上传 >50KB 的关键图片即可，不需要逐张上传所有图片。
+  > **⚠️ 图片位置确定方法**：
+  > - 先用 `block_list_block_children`（entry_id, with_descendants=false）获取当前文档全部一级 block 及其 block_id
+  > - 根据原文中 `![](images/xxx)` 出现的位置（在哪段文字之后），找到对应的 block_id
+  > - 用 `index` 参数指定插入位置（0-based，-1 表示末尾）
+  > - 如果文字已分块导入完毕再补图，可以按顺序从前往后插入（注意每插入一张图，后续 block 的 index 会 +1）
+  
+  > **⚠️ 得到 APP 文章特殊情况**：得到文章通常有 80-100+ 张图片，其中大部分是公式渲染图（3-10KB），真正有信息量的数据图表约 5-10 张（>50KB）。对得到文章，**必须**上传 >50KB 的关键图片（概念图、流程图、案例配图等），不需要逐张上传所有小图。
+  
+  > **⚠️ 得到文章完整转存流程（2026-05-09 实战验证）**：
+  > 1. `fetch_article.py --cdp` 抓取全文 → 本地 article.md + images/
+  > 2. 提取纯文字版（去掉 `![](images/...)` 引用 + 去掉得到APP UI噪声如"展开"、"分享"、点赞数、用户留言等）
+  > 3. 创建 page → 分块导入纯文字（每块 ≤4000 chars）
+  > 4. 筛选 >50KB 的关键图片（用 `find images/ -size +50k`）
+  > 5. 排除 SVG 格式的 UI 图标（查看文件头是否为 `<?xml`）
+  > 6. 逐张上传关键图片并插入文档对应位置
   
   **降级方案 B（最终降级）**：如果以上都失败 → 调用 `scripts/md_to_pdf.py` 转为 PDF，再通过三步上传流程上传：
   1. `file_apply_upload`（参数：`parent_entry_id=<日期目录ID>`, `name="<原文标题>.pdf"`, `size=<文件字节数>`, `mime_type="application/pdf"`, `upload_type="PRE_SIGNED_URL"`）
@@ -973,13 +991,14 @@ python3 scripts/md_to_page.py "<原文标题>_translated.md" \
 
 **步骤 5：输出结果**
 - 按 `config.json` 中的 `lexiang.access_domain.page_url_template` 格式拼接文档链接，告知用户
-- 示例：`https://lexiangla.com/pages/<entry_id>`（域名从配置读取，**不要**硬编码）
+- 示例：`https://lexiangla.com/pages/<entry_id>?company_from=<company_from>`（域名和 company_from 从配置读取，**不要**硬编码）
+- **⚠️ 链接必须包含 `company_from` 参数**，否则用户打开页面会跳转到登录页或显示无权限
 
 #### 注意事项
 
 - **配置初始化是前置条件**：首次使用时会自动通过对话引导完成知识库配置，无需手动编辑文件
 - **MCP 连接是前置条件**：必须先确认 lexiang MCP 已连接才能执行操作。不同 Agent 的连接方式不同，参见上方「乐享 MCP 工具的调用方式」
-- **访问链接域名**：展示给用户的链接一律按 `config.json` 中 `page_url_template` 格式生成，**不要**使用 `mcp.lexiang-app.com`
+- **访问链接域名**：展示给用户的链接一律按 `config.json` 中 `page_url_template` 格式生成（含 `company_from` 参数），**不要**使用 `mcp.lexiang-app.com`，**不要**省略 `company_from`
 - **上传前自动去重**：按「文档名称 + 文档类型」在目标日期目录下查重，避免重复上传
 - **默认使用在线文档（page）格式**：所有文章（含图文）统一以在线文档格式上传，支持编辑、检索、评论。PDF 仅作为最终降级方案
 - 纯文本文章直接用 `entry_import_content`，图文文章优先用 `md_to_page.py`（图片内嵌），降级用 `entry_import_content`（图片不内嵌但文字完整）
@@ -1166,6 +1185,58 @@ if content_el:
 - 如果是多篇系列文章（如上/下篇），合并时用 `## 上篇` / `## 下篇` 分隔
 - 作者信息需要手动确认（通用提取器可能抓错）
 
+**得到文章转存乐享完整流程（2026-05-09 实战验证 ✅）**：
+
+> 以下流程已在实际操作中验证通过，确保图文完整转存。
+
+1. **抓取**：`python scripts/fetch_article.py fetch "<URL>" --output-dir articles/dedao_<ID短码> --cdp`
+   - 产出：`article.md` + `images/` 目录（通常 80-100+ 张图，大部分是小于 10KB 的公式/icon 图）
+
+2. **提取纯文字版**（去除图片引用和得到 UI 噪声）：
+   ```bash
+   # 去除图片引用 ![](images/...)
+   # 去除得到 APP 特有 UI 噪声：
+   #   - "展开"/"收起" 按钮文字
+   #   - 点赞数、评论数、分享按钮（如 "25"、"8"、"218"、"分享"）
+   #   - "关注" 按钮
+   #   - 用户昵称 + 日期行（如 "Christy\n05-05"）
+   #   - "划重点" / "添加到笔记" / "写笔记划线删除划线复制" 等功能按钮
+   #   - "首次发布: ..." 行
+   #   - "我的留言" / "用户留言" / "全部 精选 筛选" 等区域标记
+   # 保留正文 + 注释引用
+   ```
+   
+3. **创建在线文档 + 分块导入文字**：
+   - `entry_create_entry`（entry_type="page", parent_entry_id=日期目录, name="<文章标题>（来源描述）"）
+   - 将纯文字版分块（≤4000 chars/块），第一块 force_write=true，后续 force_write=false 追加
+   - 验证导入结果（spot check 关键段落）
+
+4. **筛选并上传关键图片**：
+   ```bash
+   # 找出 >50KB 的关键图片
+   find images/ -size +50k -type f | sort
+   
+   # 排除 SVG/UI 图标（检查文件头）
+   file images/img_04_*.png  # 如果是 SVG XML 则跳过
+   
+   # 查看图片内容（确认哪些有信息价值）
+   # 典型有价值的：概念图、流程图、人物照片、数据图表
+   # 典型无价值的：SVG 格式的得到 APP logo/icon
+   ```
+
+5. **逐张上传图片到文档对应位置**（每张图3步）：
+   ```
+   ① block_apply_block_attachment_upload(entry_id, name, size, mime_type) → session_id + upload_url
+   ② curl -X PUT "<upload_url>" -H "Content-Type: <mime>" -H "Content-Length: <size>" --data-binary @<file>
+   ③ block_create_block_descendant(entry_id, parent_block_id=page_block_id, index=<位置>, descendant=[{block_type:"image", image:{session_id, caption, align:"center"}}])
+   ```
+   
+   **图片位置确定**：
+   - 先用 `block_list_block_children`（entry_id, with_descendants=false）获取所有一级 block
+   - 根据原文 article.md 中 `![](images/xxx)` 的位置，找到对应文字段落的 block_id
+   - 用 index 参数插入（注意：每插入一张图，后面的 block index 都会 +1）
+   - 如果精确位置难以确定，也可以用 index=-1 追加到末尾（所有图集中放在文末也可接受）
+
 **适用场景**：得到 APP 专栏文章（`www.dedao.cn/course/article?id=xxx`）
 
 **TODO**：考虑在 `fetch_article.py` 中增加得到专用检测和选择器（类似微信公众号的 `_is_wechat_article` 机制），自动使用 `.iget-articles` 提取正文。
@@ -1316,7 +1387,7 @@ await page.pdf({
 | 微信文章图片丢失 | `web_fetch` 无法触发懒加载和绕过防盗链 | **必须**使用 `fetch_article.py`，脚本自动检测微信域名并启用专用处理策略 |
 | 乐享知识库操作失败 | MCP 连接异常或 Token 过期 | ① 确认当前 Agent 的 lexiang MCP 已连接（CodeBuddy 检查 MCP 面板、OpenClaw 检查 skill 安装状态）；② Token 过期时访问 https://lexiangla.com/mcp 获取新 Token 并更新 MCP 配置 |
 | 文件上传到了知识库根目录而非日期目录 | 跳过了步骤 2（创建日期目录）和步骤 3（去重检查），直接以 `root_entry_id` 作为 `parent_entry_id` 上传 | 严格按照步骤 1→2→3→4 顺序执行，步骤 2 中先 `entry_list_children` 检查日期目录是否存在，不存在则创建 |
-| 展示给用户的乐享链接无法访问 | 使用了 MCP API 域名 `mcp.lexiang-app.com` 而非用户可访问的前端域名 | 所有展示给用户的链接必须按 `config.json` 中 `page_url_template` 格式生成（默认为 `https://lexiangla.com/pages/<entry_id>`） |
+| 展示给用户的乐享链接无法访问 | 使用了 MCP API 域名 `mcp.lexiang-app.com` 或缺少 `company_from` 参数 | 所有展示给用户的链接必须按 `config.json` 中 `page_url_template` 格式生成：`https://lexiangla.com/pages/<entry_id>?company_from=<company_from>`。**company_from 不可省略**，否则用户无法访问 |
 | PDF 中缺少标题 | `fetch_article.py` 的 `processNode` 将正文 `<h1>` 转为 `# 标题`，与手动拼接的元信息头标题重复；某些网站（如 Lenny's Newsletter）标题在 `articleEl` 外部导致 MD 文件第一行 `# ` 为空 | 已修复：(1) `processNode` 中自动去重正文中与已提取 title 相同的第一个 h1 (2) 标题提取增加 `og:title`、`meta[name="title"]`、`document.title` 多策略回退 (3) `md_to_pdf.py` 增加标题回退——当 MD 中无有效 h1 时从 `article_meta.json` 补充 |
 | PDF 中缺少子标题 | 某些网站的 HTML 结构导致 `### # 从 Tab 到 Agents` 被拆为两行：`### #` 和 `从 Tab 到 Agents`，`parse_markdown` 将 `#` 视为无效标题丢弃 | 已修复：`parse_markdown` 增加拆行标题检测——当标题文字为 `#` 或空时，检查下一行是否为实际标题文字并合并 |
 | md_to_page.py 导入后文字显示为 base64 乱码 | 脚本通过 HTTP JSON-RPC 直连乐享 MCP API 时，对 content 做了多余的 base64 编码。乐享 MCP 的 base64 要求仅针对 IDE 侧 MCP 协议 | 已修复：去掉 `import_content` 函数中的 `base64.b64encode()`，直传原始 markdown。⚠️ 通过 HTTP JSON-RPC 直连时**永远不要做 base64 编码** |
@@ -1330,3 +1401,5 @@ await page.pdf({
 | `md_to_page.py` 新增评价信息功能 | 需要在文档顶部插入用户评价（callout 组件）| 已添加 `--evaluation`（短文本）和 `--evaluation-file`（文件路径）两个参数；评价内容会以 blockquote 格式插入文档顶部，乐享会自动渲染为 callout 组件 |
 | 播客文字稿章节标题重复出现几十次 | 在 Whisper segment 级别（1-5秒粒度）插入章节标题，且用宽松时间容差匹配 `abs(start - ts) < 5`，导致多个 segment 都命中同一标题 | **必须先合并 segments 为段落（gap<2s, duration<60s），再在段落级别插入标题**。用 `inserted_headers = set()` 跟踪已插入标题，每个标题只插入一次 |
 | 日期目录重复创建 | 直接调用 `entry_create_entry` 而不先查询目录是否已存在 | **必须先用 `entry_list_children` 查询根目录**，匹配到同名 folder 则复用其 ID，不存在才创建。已在步骤 2 中加强约束 |
+| 得到文章转存后无图片 | 只导入了纯文字，未执行图片上传步骤 | 得到文章**必须**在文字导入后，逐张上传 >50KB 的关键图片（概念图/流程图/配图），流程：`block_apply_block_attachment_upload` → `curl PUT` → `block_create_block_descendant`(image block)。详见"得到 APP 文章抓取"章节 |
+| 图片上传后显示不出来 | `block_create_block_descendant` 的 image block 未正确传入 session_id | image block 的 `session_id` 必须来自同一个 `block_apply_block_attachment_upload` 返回值，且 curl PUT 必须返回 HTTP 200 才表示文件上传成功 |
