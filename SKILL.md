@@ -791,44 +791,35 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
 
 ---
 
-**🚨 执行前必读：三种常见错误**
+**🚨 执行前必读：两种常见错误**
 
 | # | 错误做法 ❌ | 正确做法 ✅ |
 |---|---|---|
 | 1 | 直接调用 `mcp__lexiang__entry_create_entry` 创建文件夹 | 先调用 `mcp__lexiang__entry_list_children` 查询根目录 |
-| 2 | 只查第一页，看到没有就创建（忽略 `next_page_token`） | 只要返回有 `next_page_token`，就继续查下一页，直到取完所有条目 |
-| 3 | 只匹配 `name=="2026-05-11"`，不检查 `entry_type` | 必须同时匹配 `name=="2026-05-11"` **且** `entry_type=="folder"` |
+| 2 | 只匹配 `name=="2026-05-11"`，不检查 `entry_type` | 必须同时匹配 `name=="2026-05-11"` **且** `entry_type=="folder"` |
 
 ---
 
 **决策树（必须逐条执行，不可跳步）：**
 
 ```
-步骤 2a：首次查询根目录
+步骤 2a：查询根目录
   工具：mcp__lexiang__entry_list_children
   参数：{"parent_id": "<root_entry_id>"}
-  
+
   遍历返回的 entries[] 数组：
     查找是否有 entry_type=="folder" 且 name=="当天日期" 的条目
     例如今天 2026-05-11 → 查找 name=="2026-05-11" 且 entry_type=="folder"
-  
+
   如果找到 → 记录其 id → 【跳到步骤 3，不创建】
+  如果没找到 → 【继续到步骤 2b】
 
-步骤 2b：处理分页（重要！）
-  检查首次返回结果中是否有 next_page_token：
-    如果有 → 用 page_token 参数再次调用 entry_list_children
-    重复此过程，直到 next_page_token 为空
-    【每次查询都要检查 entries[] 中是否有目标文件夹】
-
-步骤 2c：确认不存在后，才能创建
-  只有满足以下所有条件，才能调用创建工具：
-    ✅ 已检查第一页 entries（确认不存在）
-    ✅ 已检查所有分页（如果 next_page_token 存在）
-    ✅ 确认不存在任何 name=="当天日期" 且 entry_type=="folder" 的条目
-  
+步骤 2b：确认不存在后，才能创建
   调用：mcp__lexiang__entry_create_entry
   参数：{"entry_type": "folder", "parent_entry_id": "<root_entry_id>", "name": "当天日期"}
 ```
+
+> **📌 关于分页的说明**：日期目录按创建时间倒序排列，当天的目录如果存在一定在第一页，无需处理分页。但如果你在处理非日期目录的场景（如查找某个不确定的条目），应注意 `next_page_token` 的存在。
 
 ---
 
@@ -843,12 +834,11 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
 **✅ 正确示例（必须这样做）：**
 
 ```
-# 正确：先查询所有分页，确认不存在才创建
-→ 调用 mcp__lexiang__entry_list_children，参数 parent_id="<root_entry_id>"
+# 正确：先查询第一页，找到就用，找不到才创建
+→ 调用 mcp__lexiang__entry_list_children，参数 {"parent_id": "<root_entry_id>"}
 → 遍历 entries，检查是否有 name=="2026-05-11" 且 entry_type=="folder"
-→ 检查 next_page_token，若存在则继续查询下一页（重复直至为空）
-→ 确认不存在 → 才调用 mcp__lexiang__entry_create_entry
-→ 若已存在 → 直接使用已有文件夹的 id，跳过创建
+→ 找到 → 记录 id，跳过创建，直接进入步骤 3
+→ 没找到 → 调用 mcp__lexiang__entry_create_entry 创建
 ```
 
 **步骤 3：去重检查**
