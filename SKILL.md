@@ -787,24 +787,68 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
 
 **步骤 2：检查/创建当天日期目录（🚨 必须先查再建，禁止直接创建）**
 
-> **⚠️ 严禁跳过查询直接调用 `entry_create_entry`！** 必须先用 `entry_list_children` 查询根目录，确认目录不存在后才能创建。直接创建会导致同名目录重复。
+> **🚨 这是本 skill 最常见的错误！** 2026-05-11 实战中，Agent 未查询直接创建了同名目录。每次执行到此步骤，**必须**严格按照下方决策树执行，绝对禁止跳过查询直接调用创建工具。
 
-- **先查**：调用 `entry_list_children`（参数：`parent_id=<root_entry_id>`）查询根目录下的子条目
-- **匹配**：在返回的 entries 中查找是否已存在以当天日期命名（如 `2026-03-18`）的 `folder` 类型条目
-- **已存在** → 直接使用该条目的 `id` 作为目标目录，**跳过创建**
-- **不存在** → 调用 `entry_create_entry`（参数：`parent_entry_id=<root_entry_id>`, `name="2026-03-18"`, `entry_type="folder"`）创建
+---
 
-```python
-# 正确写法示例（Python）
-entries = mcp_call('entry_list_children', {'parent_id': root_entry_id})['data']['entries']
-folder_id = None
-for e in entries:
-    if e['name'] == '2026-04-21' and e.get('entry_type') == 'folder':
-        folder_id = e['id']
-        break
-if not folder_id:
-    result = mcp_call('entry_create_entry', {...})
-    folder_id = result['data']['entry']['id']
+**🚨 执行前必读：三种常见错误**
+
+| # | 错误做法 ❌ | 正确做法 ✅ |
+|---|---|---|
+| 1 | 直接调用 `mcp__lexiang__entry_create_entry` 创建文件夹 | 先调用 `mcp__lexiang__entry_list_children` 查询根目录 |
+| 2 | 只查第一页，看到没有就创建（忽略 `next_page_token`） | 只要返回有 `next_page_token`，就继续查下一页，直到取完所有条目 |
+| 3 | 只匹配 `name=="2026-05-11"`，不检查 `entry_type` | 必须同时匹配 `name=="2026-05-11"` **且** `entry_type=="folder"` |
+
+---
+
+**决策树（必须逐条执行，不可跳步）：**
+
+```
+步骤 2a：首次查询根目录
+  工具：mcp__lexiang__entry_list_children
+  参数：{"parent_id": "<root_entry_id>"}
+  
+  遍历返回的 entries[] 数组：
+    查找是否有 entry_type=="folder" 且 name=="当天日期" 的条目
+    例如今天 2026-05-11 → 查找 name=="2026-05-11" 且 entry_type=="folder"
+  
+  如果找到 → 记录其 id → 【跳到步骤 3，不创建】
+
+步骤 2b：处理分页（重要！）
+  检查首次返回结果中是否有 next_page_token：
+    如果有 → 用 page_token 参数再次调用 entry_list_children
+    重复此过程，直到 next_page_token 为空
+    【每次查询都要检查 entries[] 中是否有目标文件夹】
+
+步骤 2c：确认不存在后，才能创建
+  只有满足以下所有条件，才能调用创建工具：
+    ✅ 已检查第一页 entries（确认不存在）
+    ✅ 已检查所有分页（如果 next_page_token 存在）
+    ✅ 确认不存在任何 name=="当天日期" 且 entry_type=="folder" 的条目
+  
+  调用：mcp__lexiang__entry_create_entry
+  参数：{"entry_type": "folder", "parent_entry_id": "<root_entry_id>", "name": "当天日期"}
+```
+
+---
+
+**❌ 错误示例（禁止这样做）：**
+
+```
+# 错误：直接创建，不查询
+→ 调用 mcp__lexiang__entry_create_entry，参数 name="2026-05-11"
+→ 结果：知识库中出现多个同名 "2026-05-11" 文件夹
+```
+
+**✅ 正确示例（必须这样做）：**
+
+```
+# 正确：先查询所有分页，确认不存在才创建
+→ 调用 mcp__lexiang__entry_list_children，参数 parent_id="<root_entry_id>"
+→ 遍历 entries，检查是否有 name=="2026-05-11" 且 entry_type=="folder"
+→ 检查 next_page_token，若存在则继续查询下一页（重复直至为空）
+→ 确认不存在 → 才调用 mcp__lexiang__entry_create_entry
+→ 若已存在 → 直接使用已有文件夹的 id，跳过创建
 ```
 
 **步骤 3：去重检查**
