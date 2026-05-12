@@ -1037,8 +1037,11 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
 步骤 2b：确认不存在后，才能创建
   调用：mcp__lexiang__entry_create_entry
   参数：{"entry_type": "folder", "parent_entry_id": "<root_entry_id>", "name": "当天日期"}
-  💡 `entry_create_entry` 支持 after 参数：不传则新目录置于父目录顶部；传入某个 entry_id 则排在该条目之后。
-     日期目录按时间倒序使用，不传 after 可让今天的目录自动置顶。
+
+  创建成功后立即置顶（entry_create_entry 实际行为是追加到末尾，需额外调用 entry_move_entry）：
+  调用：mcp__lexiang__entry_move_entry
+  参数：{"entry_id": "<新建的entry_id>", "parent_id": "<root_entry_id>", "after": ""}
+  💡 after 为空 = 移动到第一个位置（顶部）
 ```
 
 > **📌 关于分页的说明**：日期目录按创建时间倒序排列，当天的目录如果存在一定在第一页，无需处理分页。但如果你在处理非日期目录的场景（如查找某个不确定的条目），应注意 `next_page_token` 的存在。

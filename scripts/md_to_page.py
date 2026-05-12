@@ -82,6 +82,9 @@ def main():
         entry_id = result.get("data", {}).get("entry", {}).get("id", "")
         if not entry_id: sys.exit(f"Failed to create page: {result}")
         print(f"Created page: {entry_id}")
+        # 置顶：创建后立即移动到父目录第一个位置（after 为空 = 置顶）
+        call_mcp_tool(base, cf, tok, "entry_move_entry", {
+            "entry_id": entry_id, "parent_id": args.parent_id, "after": ""})
 
     with open(args.md_path, "r") as f:
         content = f.read()
