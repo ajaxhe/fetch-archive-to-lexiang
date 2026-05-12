@@ -1,6 +1,6 @@
 # fetch-archive-to-lexiang
 
-通用 AI Agent Skill：抓取文章 / 视频 / 播客，并归档到[乐享](https://lexiangla.com)知识库。
+通用 AI Agent Skill：抓取文章 / 视频 / 播客 / PDF 论文，并归档到[乐享](https://lexiangla.com)知识库。
 
 适用于 [CodeBuddy](https://www.codebuddy.ai/)、[OpenClaw](https://github.com/anthropics/openclaw)、[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Gemini CLI](https://github.com/google-gemini/gemini-cli) 等所有支持 Skill / Custom Instructions 机制的 AI Agent。
 
@@ -17,25 +17,37 @@
 | 🎬 **YouTube 视频** | YouTube | yt-dlp 下载 → Whisper 转录 → AI 翻译（中英对照）→ 上传乐享 |
 | 🎙️ **播客音频** | 小宇宙FM、Apple Podcasts 等 | yt-dlp 下载音频 → Whisper 转录 → 繁简转换 → 上传乐享 |
 | 📄 **免费文章** | 任意公开网页 | web_fetch / Playwright → Markdown → 上传乐享 |
+| 📑 **PDF 文件/论文** | arXiv、乐享知识库已存 PDF、本地文件等 | pymupdf 提取文字 + 精确裁剪图形 → 语言检测 → 非中文自动翻译为中英对照 → 在线文档上传乐享 |
 
 ### 乐享知识库归档
 
-- 按**天维度**自动创建日期目录（如 `2026-03-18/`）
+- 按**天维度**自动创建日期目录（如 `2026-05-12/`），新建后置于目录顶部
 - 图文文章转为 **PDF**（嵌入图片）上传
-- 纯文本/文字稿以**在线文档（page）**格式创建，支持在线编辑
+- 纯文本/文字稿/PDF 翻译以**在线文档（page）**格式创建，支持在线编辑
 - 自动**去重检查**，避免重复上传
 - 通过 **lexiang MCP** 工具操作知识库，安全且通用
+- 输出的乐享文档链接格式：`https://lexiangla.com/pages/{entry_id}?company_from={company_from}`
+
+### PDF 处理特性
+
+- **自动语言检测**：中文字符占比 ≥ 30% 则直接归档；否则自动翻译为**中英对照**格式
+- **精确图形提取**：区分光栅图（`get_image_rects`）和矢量图（`get_drawings`），精确裁剪图形区域（3x 高清），不截整页
+- **图片正确定位**：各图插入论文对应章节位置，caption 格式为 `Figure N: English / 图N：中文`（英中同一行）
+- 已在 arXiv:2605.05538（AgenticRAG）上完成端到端验证（2026-05-12）
 
 ## 文件结构
 
 ```
-fetch-archive/
+fetch-archive-to-lexiang/
 ├── SKILL.md                      # Skill 定义文件（Agent 指令）
 ├── config.json.example           # 配置模板（首次使用时复制为 config.json）
 ├── README.md                     # 本文件
 └── scripts/
     ├── fetch_article.py          # 文章抓取脚本（Cookie 注入 / CDP 模式）
+    ├── md_to_page.py             # Markdown → 乐享在线文档（含图片上传和置顶）
     ├── md_to_pdf.py              # Markdown → PDF 转换（嵌入图片、中文渲染）
+    ├── translate_gemini.py       # 文章翻译（Gemini API）
+    ├── upload_video_via_openapi.py # 视频上传（走 OpenAPI，触发 VOD 转码）
     └── yt_download_transcribe.py # YouTube/播客 下载 + Whisper 转录 + AI 翻译
 ```
 
@@ -53,6 +65,7 @@ Agent 会自动完成仓库克隆、依赖安装和初始配置。
 
 1. **乐享 MCP**：本 Skill 通过 [lexiang MCP](https://github.com/nicognaW/lexiang-mcp) 操作乐享知识库，需提前在 Agent 的 MCP 配置中添加 lexiang server（[获取 Token](https://lexiangla.com/mcp)）
 2. **Python 3.8+**：脚本运行环境
+3. **pymupdf**（PDF 处理）：`pip install pymupdf`
 
 > 其他依赖（Playwright、yt-dlp、Whisper 等）均由 Agent 在首次使用时自动检测并安装，无需手动操作。
 
@@ -72,6 +85,12 @@ Agent 会自动完成仓库克隆、依赖安装和初始配置。
 
 # 播客转录
 转录这期播客：https://www.xiaoyuzhoufm.com/episode/xxxxx
+
+# PDF 论文翻译转存（arXiv 直链）
+把这篇论文转存到乐享知识库：https://arxiv.org/pdf/2605.05538
+
+# PDF 论文翻译转存（乐享已存 PDF）
+把乐享里的这篇论文翻译转存：https://lexiangla.com/pages/xxxxx?company_from=yyyyy
 ```
 
 ## 脚本独立使用
@@ -87,6 +106,9 @@ python3 scripts/fetch_article.py fetch <URL> --output-dir <输出目录> --cdp
 
 # Substack 登录（首次使用前执行一次）
 python3 scripts/fetch_article.py login
+
+# Markdown 转乐享在线文档（自动置顶）
+python3 scripts/md_to_page.py <article.md路径> --parent-id <父目录ID> --name "文章标题"
 
 # Markdown 转 PDF
 python3 scripts/md_to_pdf.py <article.md路径>
@@ -114,7 +136,7 @@ cp config.json.example config.json
     },
     "access_domain": {
       "domain": "lexiangla.com",
-      "page_url_template": "https://lexiangla.com/pages/{entry_id}",
+      "page_url_template": "https://lexiangla.com/pages/{entry_id}?company_from={company_from}",
       "space_url_template": "https://lexiangla.com/spaces/{space_id}?company_from={company_from}"
     }
   }
@@ -122,6 +144,13 @@ cp config.json.example config.json
 ```
 
 > ⚠️ `config.json` 包含你的私有知识库信息，已被 `.gitignore` 忽略，不会被提交到仓库。
+
+## 已知行为注意事项
+
+- **乐享文档链接**：必须带 `?company_from=xxx` 参数，否则无法访问。`mcp.lexiang-app.com` 格式为 MCP 内部调试链接，用户不可访问。
+- **entry_move_entry 置顶**：`after=""` 实测是移到末尾（与接口文档描述相反）。正确置顶方式：先查父目录第一个条目 ID，用 `after=<该ID>` 排在其后。
+- **entry_import_content 不支持位置控制**：用此接口创建的文档永远追加到目录末尾，无法通过参数控制顺序，需创建后调用 `entry_move_entry` 调整。
+- **PDF 矢量图**：流程图、柱状图等矢量图无法用 `extract_image()` 提取，必须用 `get_pixmap(clip=Rect(...))` 截取指定区域。
 
 ## 兼容性
 
@@ -136,3 +165,4 @@ cp config.json.example config.json
 ## License
 
 MIT
+
