@@ -563,6 +563,7 @@ Next paragraph of English text...
 **文字稿上传**（在线文档 page 类型）：
 1. 获取知识库根节点 → 检查/创建日期目录（同上述步骤 1-3）
 2. 调用 `entry_import_content`（参数：`space_id`, `parent_id=<日期目录ID>`, `name="<视频标题>"`, `content=<文字稿Markdown内容>`, `content_type="markdown"`）
+   - **不传 `before`/`after` 参数**，文档会默认创建在日期目录的最顶部
 3. 在线文档支持后续在乐享中按块维度编辑更新（如修正翻译）
 
 **视频文件上传**（🚨 推荐使用 OpenAPI 路径，MCP 的 `file_apply_upload` 产生不可播放的 file 条目）：
@@ -1036,6 +1037,7 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
 步骤 2b：确认不存在后，才能创建
   调用：mcp__lexiang__entry_create_entry
   参数：{"entry_type": "folder", "parent_entry_id": "<root_entry_id>", "name": "当天日期"}
+  ⚠️ 注意：不传 after 参数（或传空），新目录会自动创建在父目录的最顶部位置
 ```
 
 > **📌 关于分页的说明**：日期目录按创建时间倒序排列，当天的目录如果存在一定在第一页，无需处理分页。但如果你在处理非日期目录的场景（如查找某个不确定的条目），应注意 `next_page_token` 的存在。
