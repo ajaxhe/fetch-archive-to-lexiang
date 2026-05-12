@@ -82,9 +82,20 @@ def main():
         entry_id = result.get("data", {}).get("entry", {}).get("id", "")
         if not entry_id: sys.exit(f"Failed to create page: {result}")
         print(f"Created page: {entry_id}")
-        # 置顶：创建后立即移动到父目录第一个位置（after 为空 = 置顶）
-        call_mcp_tool(base, cf, tok, "entry_move_entry", {
-            "entry_id": entry_id, "parent_id": args.parent_id, "after": ""})
+        # 置顶：获取父目录第一个条目，移到它之后（after="" 实测是末尾，不是置顶）
+        children = call_mcp_tool(base, cf, tok, "entry_list_children", {
+            "parent_id": args.parent_id, "limit": 1})
+        first_entries = children.get("data", {}).get("entries", [])
+        # 找到除自身之外的第一个条目，排在它之后（即位列第二，视为"顶部"）
+        first_id = ""
+        for e in first_entries:
+            if e.get("id") != entry_id:
+                first_id = e.get("id", "")
+                break
+        if first_id:
+            call_mcp_tool(base, cf, tok, "entry_move_entry", {
+                "entry_id": entry_id, "parent_id": args.parent_id, "after": first_id})
+            print(f"Moved to top (after first entry: {first_id})")
 
     with open(args.md_path, "r") as f:
         content = f.read()

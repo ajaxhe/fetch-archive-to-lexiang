@@ -1038,10 +1038,10 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
   调用：mcp__lexiang__entry_create_entry
   参数：{"entry_type": "folder", "parent_entry_id": "<root_entry_id>", "name": "当天日期"}
 
-  创建成功后立即置顶（entry_create_entry 实际行为是追加到末尾，需额外调用 entry_move_entry）：
-  调用：mcp__lexiang__entry_move_entry
-  参数：{"entry_id": "<新建的entry_id>", "parent_id": "<root_entry_id>", "after": ""}
-  💡 after 为空 = 移动到第一个位置（顶部）
+  创建后置顶（⚠️ after="" 实测是末尾，不是置顶，文档描述有误）：
+  1. 先调用 entry_list_children 获取父目录第一个条目的 entry_id（如 Life with AI 的 ID）
+  2. 调用 entry_move_entry，after 传第一个条目的 entry_id，将新目录排在它之后
+  参数：{"entry_id": "<新建的entry_id>", "parent_id": "<root_entry_id>", "after": "<第一个固定条目的entry_id>"}
 ```
 
 > **📌 关于分页的说明**：日期目录按创建时间倒序排列，当天的目录如果存在一定在第一页，无需处理分页。但如果你在处理非日期目录的场景（如查找某个不确定的条目），应注意 `next_page_token` 的存在。
