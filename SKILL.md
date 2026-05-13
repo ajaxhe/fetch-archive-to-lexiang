@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-description: 通用文章抓取与归档工具。抓取任意 URL（免费/付费/登录墙）的文章全文，转换为结构化 Markdown，并可选转存到乐享知识库。支持 Substack、Medium、知识星球等付费平台的登录态管理。支持 YouTube 视频下载（yt-dlp）、播客音频下载（小宇宙FM等）、音频转录（Whisper）、翻译（中英对照格式），并将音视频和文字稿上传乐享知识库（文字稿使用在线文档格式，支持按块编辑）。支持 PDF 文件/链接：自动提取文本+精确裁剪图形，非中文内容默认翻译为中英对照后转存乐享。关键词触发：抓取文章、获取全文、付费文章、转存知识库、乐享、保存原文、fetch article、归档、YouTube、视频转录、字幕提取、视频下载、播客、podcast、小宇宙、xiaoyuzhou、PDF、论文、arxiv。
+description: 通用文章抓取与归档工具。抓取任意 URL（免费/付费/登录墙）的文章全文，转换为结构化 Markdown，并可选转存到乐享知识库。支持 Substack、Medium、知识星球等付费平台的登录态管理。支持 YouTube 视频下载（yt-dlp）、播客音频下载（小宇宙FM等）、音频转录（Whisper）、翻译（中英对照格式），并将音视频和文字稿上传乐享知识库（文字稿使用在线文档格式，支持按块编辑）。支持 PDF 文件/链接：自动提取文本+精确裁剪图形，非中文内容默认翻译为中英对照后转存乐享。支持微博帖子抓取（CDP 模式绕过登录墙）。关键词触发：抓取文章、获取全文、付费文章、转存知识库、乐享、保存原文、fetch article、归档、YouTube、视频转录、字幕提取、视频下载、播客、podcast、小宇宙、xiaoyuzhou、PDF、论文、arxiv、微博、weibo。
 ---
 
 # 抓取链接内容 & 转存知识库
@@ -49,13 +49,14 @@ https://lexiangla.com/pages/{entry_id}?company_from=e6c565d6d16811efac17768586f8
 2. **YouTube 视频** → 使用 `yt_download_transcribe.py`（yt-dlp 下载 + Whisper 转录 + AI 翻译），详见下方「YouTube 视频处理」章节
 3. **播客音频**（小宇宙 `xiaoyuzhoufm.com`、Apple Podcasts 等）→ yt-dlp 下载音频 + Whisper 转录，详见下方「播客音频处理」章节
 4. **PDF 文件或 PDF 直链**（如 arXiv PDF、乐享知识库中已存储的 PDF、本地 PDF 路径）→ 详见下方「PDF 处理」章节。**不要**用 `web_fetch` 或 `fetch_article.py` 处理 PDF
-5. **付费/登录墙文章** → 用 `fetch_article.py`（Cookie 注入或 CDP 模式）
-6. **免费图文文章**（正文含图片/截图/图表）→ **必须**用 `fetch_article.py`（`web_fetch` 只能返回文本，无法提取和下载页面中的图片）
-7. **免费纯文字文章**（正文无配图）→ 可用 `web_fetch`，内容不完整时切换 `fetch_article.py`
-8. **SPA 动态渲染网站**（`fetch_article.py` 抓取正文为空或极少）→ **Playwright 直接生成 PDF**，详见下方「SPA 网站 Playwright 直接出 PDF」章节
-9. **批量抓取帮助中心/文档站**（如 readme.io、GitBook、Guru 等）→ Playwright 直接生成 PDF，详见下方「SPA 网站 Playwright 直接出 PDF」章节
-10. **文字观点** → 直接整理
-11. **图片素材** → 分析图片内容
+5. **微博**（`weibo.com`）→ **必须用 `fetch_article.py --cdp`**（微博强制登录，WebFetch/Playwright 均被拦截），详见下方「微博帖子抓取」章节
+6. **付费/登录墙文章** → 用 `fetch_article.py`（Cookie 注入或 CDP 模式）
+7. **免费图文文章**（正文含图片/截图/图表）→ **必须**用 `fetch_article.py`（`web_fetch` 只能返回文本，无法提取和下载页面中的图片）
+8. **免费纯文字文章**（正文无配图）→ 可用 `web_fetch`，内容不完整时切换 `fetch_article.py`
+9. **SPA 动态渲染网站**（`fetch_article.py` 抓取正文为空或极少）→ **Playwright 直接生成 PDF**，详见下方「SPA 网站 Playwright 直接出 PDF」章节
+10. **批量抓取帮助中心/文档站**（如 readme.io、GitBook、Guru 等）→ Playwright 直接生成 PDF，详见下方「SPA 网站 Playwright 直接出 PDF」章节
+11. **文字观点** → 直接整理
+12. **图片素材** → 分析图片内容
 
 > **⚠️ 关键原则**：`web_fetch` 工具**只能返回文本内容，无法提取和下载页面中的图片**。任何包含图片、截图、图表的文章，都**必须**使用 `fetch_article.py` 抓取，否则图片信息会完全丢失。当不确定文章是否含图时，**默认用 `fetch_article.py`**。
 >
@@ -434,6 +435,45 @@ curl -s http://localhost:9222/json/version
 - `<项目子目录>/<原文标题>.md` — 帖子 Markdown
 - `<项目子目录>/<原文标题>_meta.json` — 元信息
 - `<项目子目录>/images/` — 帖子中的媒体图片
+
+#### 微博帖子抓取（必须用 CDP 模式）
+
+**微博是强制登录墙网站**，所有端口（PC 端 `weibo.com`、移动端 `m.weibo.cn`、API `m.weibo.cn/statuses/show`）均需要登录态，`web_fetch` 和普通 Playwright 都会被重定向到 `Sina Visitor System` 登录页。**必须使用 CDP 模式**。
+
+**抓取命令**：
+
+```bash
+# CDP 模式（必须）— 连接本地已登录 Chrome
+python scripts/fetch_article.py fetch "https://weibo.com/<uid>/<mid>" --output-dir <项目子目录> --cdp
+```
+
+**完整流程**：
+
+1. **确保 Chrome 已开启 CDP 端口**（port 9222）且已登录微博
+2. **运行 `fetch_article.py --cdp`**：脚本会连接真实 Chrome，复用微博登录态
+3. **CDP 连接失败时的自动降级**：脚本会回退到 Cookie 注入模式（从 Chrome Cookie DB 提取 cookies），但微博 Cookie 注入通常也能工作
+4. **抓取后整理内容**：微博原始 HTML 结构较乱，抓取结果中可能包含导航、按钮等噪音文本，需要手动清理或用 AI 整理为结构化 Markdown
+5. **转存乐享**：使用 `entry_import_content` 创建页面（非 `file_create_hyperlink`，后者仅支持微信公众号链接）
+
+**微博抓取的特殊注意事项**：
+
+| 问题 | 说明 |
+|------|------|
+| `web_fetch` 失败 | 微博强制登录，WebFetch 会被重定向到 `passport.weibo.com/visitor/visitor` |
+| Playwright 失败 | 微博检测 HeadlessChrome UA，即使用 `--browser=chrome` 也会被拦截 |
+| CDP 前置条件 | Chrome 必须已开启 `--remote-debugging-port=9222` 且已登录微博 |
+| 内容整理 | 微博页面标题通常是「微博正文 - 微博」，转存时应提取作者名和关键主题作为标题 |
+| 图片处理 | 微博图片使用 `sinaimg.cn` CDN，`fetch_article.py` 可以下载，但部分图片可能需要 Referer |
+
+**产出物**：
+- `<项目子目录>/article.md` — 微博内容 Markdown（注意：微博标题通常是通用的，需手动重命名）
+- `<项目子目录>/article_meta.json` — 元信息
+- `<项目子目录>/images/` — 微博中的图片（如有）
+
+**转存乐享时的标题建议**：
+微博原始标题是「微博正文 - 微博」，转存时应改为有意义的标题，格式建议：`<作者>：<主题关键词>`，例如：
+- `唐杰THU：最近的一些想法（AI 技术趋势）`
+- `李飞飞：关于 Spatial AI 的思考`
 
 #### 英文文章翻译为中英对照
 
