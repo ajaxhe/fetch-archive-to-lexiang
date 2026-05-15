@@ -442,6 +442,18 @@ def _is_dedao_article(url: str) -> bool:
     return "dedao.cn" in hostname
 
 
+def _is_webflow_blog(url: str) -> bool:
+    """Check if the URL is a Webflow-based blog (claude.com, anthropic.com).
+
+    These sites use `.u-rich-text-blog` or `.w-richtext` containers,
+    which are NOT matched by the generic content selectors. Requires
+    site-specific selector handling.
+    """
+    parsed = urllib.parse.urlparse(url)
+    hostname = parsed.hostname or ""
+    return any(d in hostname for d in ("claude.com", "anthropic.com"))
+
+
 # Known Cloudflare-protected domains that typically require CDP mode
 _CLOUDFLARE_DOMAINS = {
     "openai.com",
@@ -820,7 +832,7 @@ async def _scroll_page(page, is_wechat: bool = False, is_dedao: bool = False):
         await page.wait_for_timeout(2000)
 
 
-async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path, is_wechat: bool = False, is_dedao: bool = False) -> str:
+async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path, is_wechat: bool = False, is_dedao: bool = False, is_webflow: bool = False) -> str:
     """Extract article content, download images, convert to Markdown, and save.
     
     This is the shared extraction logic used by both CDP mode and cookie-injection mode.
@@ -838,15 +850,24 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
     article_data = await page.evaluate("""(args) => {
         const isWechat = args.isWechat;
         const isDedao = args.isDedao;
-        // WeChat-specific selectors come first for priority matching
+        const isWebflow = args.isWebflow;
+
+        // Remove style/script tags first (Webflow embeds <style> inside content containers)
+        if (isWebflow) {
+            document.querySelectorAll('.u-rich-text-blog style, .u-rich-text-blog script, .w-richtext style, .w-richtext script').forEach(el => el.remove());
+        }
+
+        // Site-specific selectors (priority order)
         const selectors = isWechat
             ? ['#js_content', '.rich_media_content', 'article']
             : isDedao
                 ? ['.iget-articles', 'article']
-                : [
-                    '.available-content', '.post-content', 'article .body',
-                    'article', '.entry-content', '[class*="body"]'
-                ];
+                : isWebflow
+                    ? ['.u-rich-text-blog', '.w-richtext', 'article', 'main']
+                    : [
+                        '.available-content', '.post-content', 'article .body',
+                        'article', '.entry-content', '[class*="body"]'
+                    ];
         
         let articleEl = null;
         let maxLen = 0;
@@ -959,7 +980,7 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
             content: articleEl.innerText, 
             html: articleEl.innerHTML 
         };
-    }""", {"isWechat": is_wechat, "isDedao": is_dedao})
+    }""", {"isWechat": is_wechat, "isDedao": is_dedao, "isWebflow": is_webflow})
 
     title = article_data.get("title", "Untitled")
     print(f"📖 文章标题: {title}")
@@ -1038,7 +1059,7 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
             }
             return true;
         });
-    }""", {"isWechat": is_wechat, "isDedao": is_dedao})
+    }""", {"isWechat": is_wechat, "isDedao": is_dedao, "isWebflow": is_webflow})
 
     image_map = {}
     for i, img_info in enumerate(image_elements):
@@ -1085,10 +1106,14 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
         const extractedTitle = args.title;
         const isWechat = args.isWechat;
         const isDedao = args.isDedao;
+        const isWebflow = args.isWebflow;
         
         let articleEl = null;
         if (isWechat) {
             articleEl = document.querySelector('#js_content') || document.querySelector('.rich_media_content');
+        }
+        if (isWebflow && !articleEl) {
+            articleEl = document.querySelector('.u-rich-text-blog') || document.querySelector('.w-richtext');
         }
         if (!articleEl) {
             const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article'];
@@ -1228,7 +1253,7 @@ async def _extract_and_save(page, url: str, output_path: Path, images_dir: Path,
         }
 
         return processNode(articleEl, 0);
-    }""", {"imageMap": image_map, "title": title, "isWechat": is_wechat})
+    }""", {"imageMap": image_map, "title": title, "isWechat": is_wechat, "isWebflow": is_webflow})
 
     # Build final document
     import datetime as _dt
@@ -1303,6 +1328,7 @@ async def fetch_article(
     is_substack = _is_substack_site(url)
     is_wechat = _is_wechat_article(url)
     is_dedao = _is_dedao_article(url)
+    is_webflow = _is_webflow_blog(url)
 
     # Auto-upgrade to CDP mode for Cloudflare-protected sites
     if not use_cdp and _is_cloudflare_likely(url):
@@ -1410,7 +1436,7 @@ async def fetch_article(
             await _scroll_page(page, is_wechat=is_wechat, is_dedao=is_dedao)
 
             # Extract content
-            result = await _extract_and_save(page, url, output_path, images_dir, is_wechat=is_wechat, is_dedao=is_dedao)
+            result = await _extract_and_save(page, url, output_path, images_dir, is_wechat=is_wechat, is_dedao=is_dedao, is_webflow=is_webflow)
 
             # Close the tab we opened (don't close the browser — it's the user's Chrome)
             await page.close()
@@ -1580,7 +1606,7 @@ async def fetch_article(
             print("⚠️  仍被付费墙拦截，但会继续提取可见内容")
 
         # Extract content and save
-        result = await _extract_and_save(page, url, output_path, images_dir, is_wechat=is_wechat, is_dedao=is_dedao)
+        result = await _extract_and_save(page, url, output_path, images_dir, is_wechat=is_wechat, is_dedao=is_dedao, is_webflow=is_webflow)
 
         await browser.close()
         if pw_manager:

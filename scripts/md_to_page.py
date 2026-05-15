@@ -82,11 +82,11 @@ def main():
         entry_id = result.get("data", {}).get("entry", {}).get("id", "")
         if not entry_id: sys.exit(f"Failed to create page: {result}")
         print(f"Created page: {entry_id}")
-        # 置顶：获取父目录第一个条目，移到它之后（after="" 实测是末尾，不是置顶）
+        # 置顶：获取父目录第一个条目，用 before 参数移到它之前（after="" 实测是末尾，不是置顶）
         children = call_mcp_tool(base, cf, tok, "entry_list_children", {
-            "parent_id": args.parent_id, "limit": 1})
+            "parent_id": args.parent_id, "limit": 2})
         first_entries = children.get("data", {}).get("entries", [])
-        # 找到除自身之外的第一个条目，排在它之后（即位列第二，视为"顶部"）
+        # 找到除自身之外的第一个条目，用 before 排在它之前（真正置顶）
         first_id = ""
         for e in first_entries:
             if e.get("id") != entry_id:
@@ -94,8 +94,8 @@ def main():
                 break
         if first_id:
             call_mcp_tool(base, cf, tok, "entry_move_entry", {
-                "entry_id": entry_id, "parent_id": args.parent_id, "after": first_id})
-            print(f"Moved to top (after first entry: {first_id})")
+                "entry_id": entry_id, "parent_id": args.parent_id, "before": first_id})
+            print(f"Moved to top (before first entry: {first_id})")
 
     with open(args.md_path, "r") as f:
         content = f.read()
@@ -122,7 +122,11 @@ def main():
         print(f"Added evaluation at top ({len(eval_text)} chars)")
 
     img_dir = os.path.join(os.path.dirname(os.path.abspath(args.md_path)), "images")
-    img_pattern = r"!\[\]\(images/(img_\d+_[a-f0-9]+\.\w+)\)"
+    # Match both naming patterns:
+    #   fetch_article.py:     ![](images/img_01_1513609c.png)  (with hash)
+    #   fetch_claude_blog.py: ![](images/img_01.png)           (without hash)
+    #   generic:              ![alt](images/anything.ext)
+    img_pattern = r"!\[[^\]]*\]\(images/([^)]+)\)"
 
     segments = []
     last_end = 0

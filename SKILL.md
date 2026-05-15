@@ -45,22 +45,28 @@ https://lexiangla.com/pages/{entry_id}?company_from=e6c565d6d16811efac17768586f8
 
 根据 URL 类型选择抓取方式（按优先级排列）：
 
-1. **微信公众号文章**（`mp.weixin.qq.com`）→ **优先使用乐享 MCP `file_create_hyperlink`**（一步到位，后端自动抓取图文+OCR），详见下方「微信公众号文章处理」章节。降级方案：`fetch_article.py`
-2. **YouTube 视频** → 使用 `yt_download_transcribe.py`（yt-dlp 下载 + Whisper 转录 + AI 翻译），详见下方「YouTube 视频处理」章节
-3. **播客音频**（小宇宙 `xiaoyuzhoufm.com`、Apple Podcasts 等）→ yt-dlp 下载音频 + Whisper 转录，详见下方「播客音频处理」章节
-4. **PDF 文件或 PDF 直链**（如 arXiv PDF、乐享知识库中已存储的 PDF、本地 PDF 路径）→ 详见下方「PDF 处理」章节。**不要**用 `web_fetch` 或 `fetch_article.py` 处理 PDF
-5. **微博**（`weibo.com`）→ **必须用 `fetch_article.py --cdp`**（微博强制登录，WebFetch/Playwright 均被拦截），详见下方「微博帖子抓取」章节
-6. **付费/登录墙文章** → 用 `fetch_article.py`（Cookie 注入或 CDP 模式）
-7. **免费图文文章**（正文含图片/截图/图表）→ **必须**用 `fetch_article.py`（`web_fetch` 只能返回文本，无法提取和下载页面中的图片）
-8. **免费纯文字文章**（正文无配图）→ 可用 `web_fetch`，内容不完整时切换 `fetch_article.py`
-9. **SPA 动态渲染网站**（`fetch_article.py` 抓取正文为空或极少）→ **Playwright 直接生成 PDF**，详见下方「SPA 网站 Playwright 直接出 PDF」章节
-10. **批量抓取帮助中心/文档站**（如 readme.io、GitBook、Guru 等）→ Playwright 直接生成 PDF，详见下方「SPA 网站 Playwright 直接出 PDF」章节
-11. **文字观点** → 直接整理
-12. **图片素材** → 分析图片内容
+1. **claude.com / anthropic.com 博客**（`claude.com/blog/*`、`anthropic.com/research/*`、`anthropic.com/news/*`）→ 直接用 `fetch_article.py`（已内置 Webflow SPA 支持，自动检测 `.u-rich-text-blog` / `.w-richtext` 容器并移除内嵌 `<style>` 标签）。用法与其他站点一致：
+   ```bash
+   python3 scripts/fetch_article.py fetch "<URL>" --output-dir <项目子目录>
+   ```
+2. **微信公众号文章**（`mp.weixin.qq.com`）→ **优先使用乐享 MCP `file_create_hyperlink`**（一步到位，后端自动抓取图文+OCR），详见下方「微信公众号文章处理」章节。降级方案：`fetch_article.py`
+3. **YouTube 视频** → 使用 `yt_download_transcribe.py`（yt-dlp 下载 + Whisper 转录 + AI 翻译），详见下方「YouTube 视频处理」章节
+4. **播客音频**（小宇宙 `xiaoyuzhoufm.com`、Apple Podcasts 等）→ yt-dlp 下载音频 + Whisper 转录，详见下方「播客音频处理」章节
+5. **PDF 文件或 PDF 直链**（如 arXiv PDF、乐享知识库中已存储的 PDF、本地 PDF 路径）→ 详见下方「PDF 处理」章节。**不要**用 `web_fetch` 或 `fetch_article.py` 处理 PDF
+6. **微博**（`weibo.com`）→ **必须用 `fetch_article.py --cdp`**（微博强制登录，WebFetch/Playwright 均被拦截），详见下方「微博帖子抓取」章节
+7. **付费/登录墙文章** → 用 `fetch_article.py`（Cookie 注入或 CDP 模式）
+8. **免费图文文章**（正文含图片/截图/图表）→ **必须**用 `fetch_article.py`（`web_fetch` 只能返回文本，无法提取和下载页面中的图片）
+9. **免费纯文字文章**（正文无配图）→ 可用 `web_fetch`，内容不完整时切换 `fetch_article.py`
+10. **SPA 动态渲染网站**（`fetch_article.py` 抓取正文为空或极少）→ **Playwright 直接生成 PDF**，详见下方「SPA 网站 Playwright 直接出 PDF」章节
+11. **批量抓取帮助中心/文档站**（如 readme.io、GitBook、Guru 等）→ Playwright 直接生成 PDF，详见下方「SPA 网站 Playwright 直接出 PDF」章节
+12. **文字观点** → 直接整理
+13. **图片素材** → 分析图片内容
 
 > **⚠️ 关键原则**：`web_fetch` 工具**只能返回文本内容，无法提取和下载页面中的图片**。任何包含图片、截图、图表的文章，都**必须**使用 `fetch_article.py` 抓取，否则图片信息会完全丢失。当不确定文章是否含图时，**默认用 `fetch_article.py`**。
 >
 > **⚠️ SPA 降级原则**：如果 `fetch_article.py` 抓取后正文内容极少（< 200 字符），说明该网站是 SPA 动态渲染，通用内容提取器无法工作。此时应切换到 **Playwright 直接生成 PDF** 方案。
+>
+> **⚠️ 图片处理必须贯穿全流程**：抓取阶段产出的 `images/` 目录中的图片，在上传到乐享时**不可遗漏**。无论走哪条路径（`md_to_page.py` / MCP connector 分块导入 / `entry_import_content`），只要本地有图片文件，就必须上传到乐享文档中。具体图片上传流程见下方「步骤 4」的降级方案 A。
 
 #### 付费/登录墙文章获取
 
@@ -1078,10 +1084,15 @@ python3 scripts/upload_video_via_openapi.py "<音频文件>.m4a" \
   调用：mcp__lexiang__entry_create_entry
   参数：{"entry_type": "folder", "parent_entry_id": "<root_entry_id>", "name": "当天日期"}
 
-  创建后置顶（⚠️ after="" 实测是末尾，不是置顶，文档描述有误）：
-  1. 先调用 entry_list_children 获取父目录第一个条目的 entry_id（如 Life with AI 的 ID）
-  2. 调用 entry_move_entry，after 传第一个条目的 entry_id，将新目录排在它之后
-  参数：{"entry_id": "<新建的entry_id>", "parent_id": "<root_entry_id>", "after": "<第一个固定条目的entry_id>"}
+  🚨 创建后必须置顶（否则新目录会出现在末尾）：
+  1. 先调用 entry_list_children 获取父目录当前第一个条目的 entry_id
+  2. 调用 entry_move_entry，使用 **before** 参数传入第一个条目的 entry_id，将新目录移到它之前（即置顶）
+  参数：{"entry_id": "<新建的entry_id>", "parent_id": "<root_entry_id>", "before": "<当前第一个条目的entry_id>"}
+  
+  ⚠️ 注意事项：
+  - after="" 实测是移到末尾（非置顶），API 文档描述有误，禁止使用
+  - 必须用 before=<第一个条目ID> 才能真正置顶
+  - 这一步不可省略！创建目录后如果不执行 move，新目录会默认出现在最底部
 ```
 
 > **📌 关于分页的说明**：日期目录按创建时间倒序排列，当天的目录如果存在一定在第一页，无需处理分页。但如果你在处理非日期目录的场景（如查找某个不确定的条目），应注意 `next_page_token` 的存在。
@@ -1243,6 +1254,17 @@ python3 scripts/md_to_page.py "<原文标题>_translated.md" \
 
 检查 `<原文标题>.md` 文件同目录下是否存在 `images/` 目录且包含图片文件：
 
+> **🚨 图片判断 Checklist（必须逐条检查）**：
+> 1. `images/` 目录是否存在且有图片？
+> 2. Markdown 内容中是否有 `![](images/xxx)` 本地引用？（仅检查目录不够！如果 images/ 有图片但 Markdown 中无引用，说明抓取阶段出了问题——正文提取失败导致图片引用丢失，需要重新抓取）
+> 3. 如果 Markdown 中只有外链图片（`![](https://...)`）而无本地引用，说明图片没有被下载到本地。`entry_import_content` 导入外链图片后，乐享中如果外链 CDN 有防盗链/过期，图片将不可见。此时应先下载图片到本地，再用 `md_to_page.py` 导入。
+> 
+> **判断结论**：
+> - ✅ images/ 有图片 + Markdown 有 `![](images/xxx)` → **图文文章**，走图文路径
+> - ⚠️ images/ 有图片 + Markdown 无本地引用 → **抓取异常**，需重新抓取或手动修复 Markdown
+> - ⚠️ images/ 无图片 + Markdown 有外链图片 → **外链图片**，建议下载后转本地引用
+> - ✅ images/ 无图片 + Markdown 无图片引用 → **纯文本文章**，走纯文本路径
+
 - **有图片（图文文章）** → 使用 `scripts/md_to_page.py` 将 Markdown 图文导入为在线文档（图片内嵌到正文对应位置）：
   ```bash
   python3 scripts/md_to_page.py "<原文标题>.md" \
@@ -1251,23 +1273,52 @@ python3 scripts/md_to_page.py "<原文标题>_translated.md" \
   ```
   脚本会自动：按图片位置拆分 markdown → 分段导入文字（直传原始 markdown，不做 base64 编码）→ 逐张上传图片到 COS → 在正确位置插入 image block。
   
-  **降级方案 A（脚本无 token 时 — 通过 MCP connector 分块导入图文）**：
+  **降级方案 A（脚本无 token 时 — 通过 MCP connector 交替导入图文）**：
   
-  当 `md_to_page.py` 因缺少 LEXIANG_TOKEN 无法运行时（如 mcp.json 中无 lexiang 配置，只有 connector 模式），改用以下流程：
-  1. `entry_create_entry`（`entry_type="page"`）创建空白 page
-  2. 将 markdown **去除本地图片引用**（`![](images/xxx)`）后，分块（≤4000 chars/块）用 `entry_import_content_to_entry` 导入文字（第一块 force_write=true，后续 force_write=false 追加）
-  3. **逐张上传关键图片**（>50KB 的图表/概念图/配图）到文档对应位置：
-     - `block_apply_block_attachment_upload`（传 entry_id + name + size + mime_type）→ 获得 `session_id` + `upload_url`
-     - `curl -X PUT "<upload_url>" -H "Content-Type: <mime>" -H "Content-Length: <size>" --data-binary @<文件路径>` → 上传到 COS
-     - `block_create_block_descendant`（传 entry_id + parent_block_id + index + image block with session_id）→ 在指定位置插入图片
-  4. 小装饰图/公式图（<50KB 的 icon/分隔线/SVG）可跳过
+  当 `md_to_page.py` 因缺少 LEXIANG_TOKEN 无法运行时（如 mcp.json 中无 lexiang 配置，只有 connector 模式），改用以下流程。
   
-  > **⚠️ 图片位置确定方法**：
-  > - 先用 `block_list_block_children`（entry_id, with_descendants=false）获取当前文档全部一级 block 及其 block_id
-  > - 根据原文中 `![](images/xxx)` 出现的位置（在哪段文字之后），找到对应的 block_id
-  > - 用 `index` 参数指定插入位置（0-based，-1 表示末尾）
-  > - 如果文字已分块导入完毕再补图，可以按顺序从前往后插入（注意每插入一张图，后续 block 的 index 会 +1）
-  > - **⚠️ 严禁对所有图片统一使用 `index=-1`（追加到末尾）**：这会导致所有图片堆积在文档底部，破坏图文混排效果。必须逐张计算正确位置插入
+  > **🚨 核心原则：交替导入，严禁先全文后补图！**
+  > 
+  > 必须按「文字段→图片→文字段→图片→...」的顺序交替导入，这样每张图片自然落在正确位置。
+  > 绝对不能先把全部文字一次性导入，事后再补图——这会导致所有图片堆积在文档末尾，破坏图文混排。
+  
+  **执行流程（照此逐步执行，不可跳步）**：
+  
+  ```
+  步骤 A1：准备——按图片位置拆分 Markdown
+    读取 article.md 内容
+    按 ![xxx](images/yyy) 引用位置拆分为交替的 segments 数组：
+      [("text", "第一段文字..."), ("image", "img_01.png"), ("text", "第二段文字..."), ("image", "img_02.png"), ...]
+    如果文字段超过 15000 字符，按段落 \n\n 二次拆分为多个 ≤15000 的子块
+  
+  步骤 A2：创建空白 page
+    entry_create_entry（entry_type="page", parent_entry_id=<日期目录ID>, name="<原文标题>"）
+    记录 entry_id
+  
+  步骤 A3：交替导入（按 segments 数组顺序逐个处理）
+    is_first = true
+    for each segment in segments:
+      if segment.type == "text":
+        entry_import_content_to_entry（entry_id, content=segment.text, force_write=is_first）
+        is_first = false
+      
+      elif segment.type == "image":
+        img_path = images/<segment.filename>
+        if 文件不存在 or 文件 < 1KB → 跳过
+        
+        // 三步上传图片
+        1. block_apply_block_attachment_upload（entry_id, name, size, mime_type）→ session_id + upload_url
+        2. curl -X PUT "<upload_url>" --data-binary @<img_path>  → 确认 HTTP 200
+        3. block_create_block_descendant（entry_id, index="-1", descendant=[{block_type: "image", image: {session_id}}]）
+        
+        // index="-1" 在这里是正确的！因为是交替执行，当前末尾就是刚导入的文字段之后
+  ```
+  
+  > **⚠️ 为什么 index=-1 在交替导入中是正确的？**
+  > 因为文字和图片严格交替执行：先导入文字（追加到末尾），再在末尾插入图片，图片自然位于刚导入的文字之后。
+  > **只有「先全文导入完毕→事后补图」的场景下，index=-1 才会导致图片堆积在末尾。**
+  > 
+  > **⚠️ 小图片（<50KB 的 icon/分隔线/SVG 装饰图）可跳过**，只上传有信息量的关键图片（图表/截图/概念图）。
   
   > **⚠️ 得到 APP 文章特殊情况**：得到文章通常有 80-100+ 张图片，其中大部分是公式渲染图（3-10KB），真正有信息量的数据图表约 5-10 张（>50KB）。对得到文章，**必须**上传 >50KB 的关键图片（概念图、流程图、案例配图等），不需要逐张上传所有小图。
   
@@ -1313,7 +1364,7 @@ python3 scripts/md_to_page.py "<原文标题>_translated.md" \
 
 | 文件 | 用途 |
 |------|------|
-| `scripts/fetch_article.py` | 付费/登录墙文章全文抓取脚本（Chrome cookies + Playwright，Substack 登录态缓存，输出 Markdown + 图片 + 元信息 JSON） |
+| `scripts/fetch_article.py` | 通用文章抓取脚本（Chrome cookies + Playwright）。支持付费墙/登录墙、微信公众号、得到、**Webflow SPA（claude.com/anthropic.com）**等多种站点，自动识别内容容器，输出 Markdown + 图片 + 元信息 JSON。Webflow 支持为内置自动检测，无需额外参数 |
 | `scripts/md_to_pdf.py` | Markdown 转 PDF 脚本（使用 pymupdf，嵌入本地图片，正确渲染中文，支持标题回退和拆行标题修复） |
 | `scripts/md_to_page.py` | **【推荐】** Markdown 图文导入乐享在线文档脚本。按图片位置将 markdown 拆分为 text/image 交替段落，分段导入到乐享 page（文字用 entry_import_content_to_entry 直传原始 markdown，图片用 block_apply_block_attachment_upload + curl PUT + block_create_block_descendant 三步上传）。⚠️ 脚本通过 HTTP JSON-RPC 直连乐享 MCP API，content 字段**不需要 base64 编码**（直传原始 markdown 字符串）。支持任意长度文章，图片内嵌到正文对应位置，生成可编辑、可划词评论的在线文档。用法：`python3 scripts/md_to_page.py <md_file> --entry-id <ID> --token <TOKEN> --company-from <CF>` 或 `--parent-id <PID> --name "标题"` 创建新页面 |
 | `scripts/yt_download_transcribe.py` | YouTube 视频下载 + Whisper 转录 + AI 翻译脚本（yt-dlp 下载、ffmpeg 提取音频、Whisper 转录、OpenAI 翻译为中英对照 Markdown）。也可用于播客音频转录（跳过视频下载步骤） |
@@ -1751,3 +1802,8 @@ await page.pdf({
 | 日期目录重复创建 | 直接调用 `entry_create_entry` 而不先查询目录是否已存在 | **必须先用 `entry_list_children` 查询根目录**，匹配到同名 folder 则复用其 ID，不存在才创建。已在步骤 2 中加强约束 |
 | 得到文章转存后无图片 | 只导入了纯文字，未执行图片上传步骤 | 得到文章**必须**在文字导入后，逐张上传 >50KB 的关键图片（概念图/流程图/配图），流程：`block_apply_block_attachment_upload` → `curl PUT` → `block_create_block_descendant`(image block)。详见"得到 APP 文章抓取"章节 |
 | 图片上传后显示不出来 | `block_create_block_descendant` 的 image block 未正确传入 session_id | image block 的 `session_id` 必须来自同一个 `block_apply_block_attachment_upload` 返回值，且 curl PUT 必须返回 HTTP 200 才表示文件上传成功 |
+| `fetch_article.py` 抓取 Webflow SPA 站点（如 claude.com）正文为空 | 旧版通用选择器列表中无 Webflow 容器，且内嵌 `<style>` 标签污染提取 | 已修复：`fetch_article.py` 内置 `_is_webflow_blog()` 检测，自动使用 `.u-rich-text-blog` / `.w-richtext` 选择器，并在提取前移除内嵌 `<style>` 标签。无需使用独立脚本 |
+| `md_to_page.py` 无法匹配某些图片引用 | 旧版 img_pattern 只匹配 `img_XX_HASH.ext` 格式（fetch_article.py），不匹配其他命名格式 | 已修复：img_pattern 改为通用 `!\[[^\]]*\]\(images/([^)]+)\)`，兼容所有图片命名格式 |
+| 新建目录排到末尾而非顶部 | `md_to_page.py` 和手动调用 `entry_move_entry` 时使用 `after=<第一个条目ID>`（排第二）或 `after=""`（排末尾） | 已修复：统一使用 `before=<第一个条目ID>` 实现真正置顶。`after=""` 的 API 文档描述不准确，实测是排末尾 |
+| images/ 有图片但乐享文档无图片 | `entry_import_content` 导入 Markdown 时，本地 `![](images/xxx)` 引用不会自动上传图片 | `entry_import_content` 只处理文字，**不会上传本地图片**。有本地图片必须走 `md_to_page.py`（自动处理图文）或降级方案 A（**交替导入**文字和图片，严禁先全文后补图）。步骤 4 开头的「图片判断 Checklist」是必查项 |
+| 图片全部堆积在文档末尾 | 先一次性导入全部文字，事后用 `index=-1` 补图 | **必须交替导入**：按 `![](images/xxx)` 位置拆分 Markdown 为 segments，先导入一段文字 → 上传图片（index=-1 追加到末尾，此时末尾就是正确位置）→ 导入下一段文字 → 上传下一张图片... 详见降级方案 A 的执行流程 |
