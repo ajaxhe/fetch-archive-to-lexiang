@@ -15,6 +15,8 @@ def call_mcp_tool(base_url, company_from, token, tool_name, arguments):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool_name, "arguments": arguments}}
     resp = requests.post(url, headers=headers, json=payload, timeout=120)
+    if resp.status_code == 401:
+        sys.exit(f"❌ LEXIANG_TOKEN 已过期或无效（HTTP 401）。请重新获取 token：https://lexiangla.com/mcp")
     if resp.status_code != 200:
         return {"error": resp.status_code}
     for line in resp.text.strip().split(chr(10)):
@@ -25,7 +27,12 @@ def call_mcp_tool(base_url, company_from, token, tool_name, arguments):
             data = json.loads(line)
             if "result" in data:
                 for c in data["result"].get("content", []):
-                    if c.get("type") == "text": return json.loads(c["text"])
+                    if c.get("type") == "text":
+                        result = json.loads(c["text"])
+                        # Detect 401 inside response body
+                        if isinstance(result, dict) and result.get("error", {}).get("code") == 401:
+                            sys.exit(f"❌ LEXIANG_TOKEN 已过期或无效（API 返回 401）。请重新获取 token：https://lexiangla.com/mcp")
+                        return result
             return data
         except: continue
     return {}
@@ -41,11 +48,18 @@ def upload_image(base_url, cf, token, entry_id, img_path, img_name):
     mime = "image/png" if ext == "png" else "image/jpeg"
     result = call_mcp_tool(base_url, cf, token, "block_apply_block_attachment_upload", {
         "entry_id": entry_id, "name": img_name, "size": str(size), "mime_type": mime})
-    if "data" not in result: return None
+    if "error" in result:
+        print(f"    apply_upload error: {result['error']}")
+        return None
+    if "data" not in result:
+        print(f"    apply_upload unexpected response: {str(result)[:200]}")
+        return None
     sid = result["data"]["session_id"]
     upload_url = result["data"]["upload_url"]
     with open(img_path, "rb") as f:
         r = requests.put(upload_url, data=f, headers={"Content-Type": mime, "Content-Length": str(size)}, timeout=60)
+    if r.status_code != 200:
+        print(f"    COS PUT failed: HTTP {r.status_code}")
     return sid if r.status_code == 200 else None
 
 def insert_image_block(base_url, cf, token, entry_id, session_id, tmp_id):

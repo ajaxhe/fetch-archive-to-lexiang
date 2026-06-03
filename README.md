@@ -12,28 +12,41 @@
 
 | 类型 | 来源 | 处理方式 |
 |------|------|---------|
-| 📝 **图文文章** | 微信公众号、Substack、Medium、知识星球等 | Playwright 抓取 → Markdown + 图片 → PDF → 上传乐享 |
+| 📝 **图文文章** | 微信公众号、Substack、Medium、知识星球等 | Playwright 抓取 → Markdown + 图片 → 上传乐享 |
 | 🔒 **付费/登录墙文章** | Substack 付费订阅、Medium 会员等 | Chrome Cookie 注入 / CDP 模式 → 全文抓取 |
-| 🎬 **YouTube 视频** | YouTube | yt-dlp 下载 → Whisper 转录 → AI 翻译（中英对照）→ 上传乐享 |
-| 🎙️ **播客音频** | 小宇宙FM、Apple Podcasts 等 | yt-dlp 下载音频 → Whisper 转录 → 繁简转换 → 上传乐享 |
+| 🎬 **YouTube 视频** | YouTube、Substack/Newsletter 嵌入视频 | yt-dlp 下载 → Whisper 转录 → AI 翻译（中英对照）→ 标题文件夹归档 |
+| 🎙️ **播客音频** | 小宇宙FM、Apple Podcasts 等 | yt-dlp 下载音频 → FunASR/Whisper 转录 → 标题文件夹归档 |
 | 📄 **免费文章** | 任意公开网页 | web_fetch / Playwright → Markdown → 上传乐享 |
-| 📑 **PDF 文件/论文** | arXiv、乐享知识库已存 PDF、本地文件等 | pymupdf 提取文字 + 精确裁剪图形 → 语言检测 → 非中文自动翻译为中英对照 → 在线文档上传乐享 |
+| 📑 **PDF 文件/论文** | arXiv、乐享知识库已存 PDF、本地文件等 | pymupdf 提取文字 + 精确裁剪图形 → 非中文自动翻译为中英对照 → 上传乐享 |
 
 ### 乐享知识库归档
 
-- 按**天维度**自动创建日期目录（如 `2026-05-12/`），新建后置于目录顶部
-- 图文文章转为 **PDF**（嵌入图片）上传
-- 纯文本/文字稿/PDF 翻译以**在线文档（page）**格式创建，支持在线编辑
+- 按**天维度**自动创建日期目录（如 `2026-06-03/`），新建后置于目录顶部
+- **视频/播客转录**：采用「标题文件夹」结构 — 日期目录下创建以标题命名的文件夹，文字稿和媒体文件并列存放
+- 图文文章通过 MCP connector 上传（先全文后补图），保留原始图片
+- 大文档（>30K字符）通过预签名 URL 三步上传，绕过 MCP 参数限制
 - 自动**去重检查**，避免重复上传
 - 通过 **lexiang MCP** 工具操作知识库，安全且通用
 - 输出的乐享文档链接格式：`https://lexiangla.com/pages/{entry_id}?company_from={company_from}`
+
+### 视频/播客归档目录结构
+
+```
+贾维斯知识库/
+└── 2026-06-03/                              ← 日期目录（自动置顶）
+    ├── A Rational Conversation... - Benedict Evans/  ← 标题文件夹
+    │   ├── 文字稿.md（file entry）           ← 转录+翻译（预签名URL上传）
+    │   └── 视频.mp4（video entry）            ← 原始视频（VOD路径上传）
+    └── 某期播客标题/                          ← 标题文件夹
+        ├── 文字稿.md（file entry）            ← 转录文字稿
+        └── 音频.m4a（audio entry）            ← 原始音频（VOD路径上传）
+```
 
 ### PDF 处理特性
 
 - **自动语言检测**：中文字符占比 ≥ 30% 则直接归档；否则自动翻译为**中英对照**格式
 - **精确图形提取**：区分光栅图（`get_image_rects`）和矢量图（`get_drawings`），精确裁剪图形区域（3x 高清），不截整页
 - **图片正确定位**：各图插入论文对应章节位置，caption 格式为 `Figure N: English / 图N：中文`（英中同一行）
-- 已在 arXiv:2605.05538（AgenticRAG）上完成端到端验证（2026-05-12）
 
 ## 文件结构
 
@@ -42,13 +55,25 @@ fetch-archive-to-lexiang/
 ├── SKILL.md                      # Skill 定义文件（Agent 指令）
 ├── config.json.example           # 配置模板（首次使用时复制为 config.json）
 ├── README.md                     # 本文件
-└── scripts/
-    ├── fetch_article.py          # 文章抓取脚本（Cookie 注入 / CDP 模式）
-    ├── md_to_page.py             # Markdown → 乐享在线文档（含图片上传和置顶）
-    ├── md_to_pdf.py              # Markdown → PDF 转换（嵌入图片、中文渲染）
-    ├── translate_gemini.py       # 文章翻译（Gemini API）
-    ├── upload_video_via_openapi.py # 视频上传（走 OpenAPI，触发 VOD 转码）
-    └── yt_download_transcribe.py # YouTube/播客 下载 + Whisper 转录 + AI 翻译
+├── scripts/
+│   ├── fetch_article.py          # 文章抓取脚本（Cookie 注入 / CDP 模式）
+│   ├── md_to_page.py             # Markdown → 乐享在线文档（含图片上传和置顶）
+│   ├── md_to_pdf.py              # Markdown → PDF 转换（嵌入图片、中文渲染）
+│   ├── translate_gemini.py       # 文章翻译（Gemini API）
+│   ├── upload_doc_to_lexiang.py  # 大文档上传（绕过 MCP 参数限制）
+│   ├── upload_video_via_openapi.py # 视频/音频上传（走 OpenAPI VOD 路径）
+│   ├── podcast_to_lexiang.py     # 播客全流程（下载→FunASR转录→Markdown）
+│   └── yt_download_transcribe.py # YouTube 下载 + Whisper 转录 + AI 翻译
+├── references/                   # 按需加载的详细参考文档
+│   ├── lexiang-upload.md         # 乐享上传详细步骤和降级方案
+│   ├── youtube-video.md          # YouTube/嵌入视频处理流程
+│   ├── podcast-audio.md          # 播客音频处理流程
+│   ├── pdf-processing.md         # PDF 文件处理
+│   ├── platform-specific.md      # 微信公众号/得到/SPA等特定平台
+│   ├── tips-experience.md        # 经验总结
+│   └── troubleshooting.md        # 常见问题排查
+└── tests/                        # 回归测试用例
+    └── test-cases.json           # 测试场景定义
 ```
 
 ## 安装
@@ -80,7 +105,7 @@ Agent 会自动完成仓库克隆、依赖安装和初始配置。
 # 抓取 Substack 付费文章
 抓取这篇文章：https://www.lennysnewsletter.com/p/xxxxx
 
-# YouTube 视频转录
+# YouTube 视频转录（含嵌入视频的页面也支持）
 转录这个视频：https://www.youtube.com/watch?v=xxxxx
 
 # 播客转录
@@ -101,7 +126,7 @@ Agent 会自动完成仓库克隆、依赖安装和初始配置。
 # 抓取文章（Cookie 注入模式）
 python3 scripts/fetch_article.py fetch <URL> --output-dir <输出目录>
 
-# 抓取文章（CDP 模式，适用于 LinkedIn 等需要 Google 登录的站点）
+# 抓取文章（CDP 模式，适用于 Substack/微博等需要完整登录态的站点）
 python3 scripts/fetch_article.py fetch <URL> --output-dir <输出目录> --cdp
 
 # Substack 登录（首次使用前执行一次）
@@ -110,11 +135,17 @@ python3 scripts/fetch_article.py login
 # Markdown 转乐享在线文档（自动置顶）
 python3 scripts/md_to_page.py <article.md路径> --parent-id <父目录ID> --name "文章标题"
 
-# Markdown 转 PDF
-python3 scripts/md_to_pdf.py <article.md路径>
+# 大文档上传乐享（绕过 MCP 参数限制）
+python3 scripts/upload_doc_to_lexiang.py <文件.md> --parent-id <目录ID> --name "标题" --space-id <SPACE_ID>
 
 # YouTube 视频下载 + 转录 + 翻译
 python3 scripts/yt_download_transcribe.py <YouTube URL> --output-dir <输出目录>
+
+# 播客全流程转录
+python3 scripts/podcast_to_lexiang.py <播客URL> --output-dir <输出目录> --language zh
+
+# 视频/音频上传乐享（VOD 路径）
+python3 scripts/upload_video_via_openapi.py <文件.mp4> --space-id <SPACE_ID> --parent-entry-id <目录ID> --media-type video
 ```
 
 ## 配置说明
@@ -145,12 +176,28 @@ cp config.json.example config.json
 
 > ⚠️ `config.json` 包含你的私有知识库信息，已被 `.gitignore` 忽略，不会被提交到仓库。
 
+## 最近更新 (2026-06-03)
+
+### v2.1 — 视频/播客「标题文件夹」归档结构
+
+- **新增**：视频和播客转录归档采用「标题文件夹」结构 — 日期目录下创建以标题命名的文件夹，文字稿(.md)和媒体文件并列存放
+- **新增**：支持从 Substack/Newsletter 页面自动提取嵌入的 YouTube 链接进行转录
+- **新增**：Gemini 2.5 Flash 分批翻译（中英对照格式），支持补翻失败段落
+- **新增**：大文档通过预签名 URL 三步上传（file_apply_upload → PUT → file_commit_upload）
+- **新增**：文件更新/重新上传支持（describe_entry 获取 file_id → apply_upload with file_id）
+- **新增**：`tests/` 目录存放回归测试用例
+- **优化**：播客音频归档方式与视频统一（标题文件夹结构）
+- **修复**：Whisper 转录时文件名含特殊字符导致 ffmpeg 失败
+- **修复**：代理间歇断开导致 Gemini 翻译失败（env -u 清除代理）
+
 ## 已知行为注意事项
 
 - **乐享文档链接**：必须带 `?company_from=xxx` 参数，否则无法访问。`mcp.lexiang-app.com` 格式为 MCP 内部调试链接，用户不可访问。
-- **entry_move_entry 置顶**：`after=""` 实测是移到末尾（与接口文档描述相反）。正确置顶方式：先查父目录第一个条目 ID，用 `after=<该ID>` 排在其后。
+- **entry_move_entry 置顶**：`after=""` 实测是移到末尾（与接口文档描述相反）。正确置顶方式：先查父目录第一个条目 ID，用 `before=<该ID>` 排在其前。
 - **entry_import_content 不支持位置控制**：用此接口创建的文档永远追加到目录末尾，无法通过参数控制顺序，需创建后调用 `entry_move_entry` 调整。
 - **PDF 矢量图**：流程图、柱状图等矢量图无法用 `extract_image()` 提取，必须用 `get_pixmap(clip=Rect(...))` 截取指定区域。
+- **视频/音频上传**：必须走 OpenAPI VOD 路径（`upload_video_via_openapi.py`），MCP 的 `file_apply_upload` 产生不可播放的 file 条目。
+- **大文档（>30K字符）**：禁止通过 MCP 工具参数直接传入，必须用预签名 URL 三步上传。
 
 ## 兼容性
 
@@ -165,4 +212,3 @@ cp config.json.example config.json
 ## License
 
 MIT
-
