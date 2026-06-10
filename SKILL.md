@@ -17,7 +17,7 @@ disable: true
 2. **原文链接必须保留**：确保读者可以追溯原始出处。根据文档类型采用不同方式：
    - **可编辑文档**（在线文档/Markdown页面）：在文档标题下方、作者信息上方插入 `**原文链接**：[文章标题](原始URL)`
    - **不可编辑文件**（视频、音频、PDF等）：上传后通过 `knowledge_tag_set_entry_tags` 或 `comment_list_comments` → 评论方式附上原文链接
-3. **乐享链接格式**：`https://lexiangla.com/pages/{entry_id}?company_from=e6c565d6d16811efac17768586f8a025`（禁止 `mcp.lexiang-app.com`）
+3. **乐享链接格式**：按 `config.json` 中 `access_domain.page_url_template` 生成（禁止 `mcp.lexiang-app.com`）
 4. **非中文内容必须翻译**：中英对照格式（每段英文后紧跟中文翻译）
 5. **图片不可丢失**：有图片的文章必须用 `fetch_article.py` 抓取 + `md_to_page.py` 导入
 
@@ -120,8 +120,37 @@ open -a "Google Chrome" --args \
 
 ### 操作流程（严格按顺序，不可跳步）
 
-**步骤 0：读取配置**
-- 读取 `config.json`，提取 `space_id`、`company_from`
+**步骤 0：读取目标知识库配置（优先级从高到低）**
+
+```
+1. 🗣️  对话上下文（用户本次明确指定，如"转存到 XX 知识库"）→ 直接使用，不读文件
+2. 🧠  Agent 工作区记忆（当前 Agent 工作目录下的规则文件，含敏感信息，已 gitignore）
+       Cursor:  <工作区>/.cursor/rules/fetch-archive-defaults.mdc
+       其他:    各 Agent 对应的工作区记忆文件
+3. 📁  用户级配置 ~/.fetch_article/config.json（机器级默认，永不入 git）
+4. ❌  若以上均未找到 → 触发初始化向导（见下方）
+```
+
+> 🚨 **禁止读取 `<skill目录>/config.json`**：该文件通过软链被多个 Agent 共享，
+> 存在相互覆盖风险，已由上方三级配置替代。
+>
+> 🚨 **禁止将 space_id / company_from 等敏感信息写入 SKILL.md 或任何会提交 GitHub 的文件。**
+
+**初始化向导（步骤 0 未找到配置时自动触发）**
+
+```
+Agent: 未检测到目标知识库配置，是否现在初始化？
+用户: （粘贴知识库链接，如 https://lexiangla.com/spaces/xxx?company_from=yyy）
+Agent: ① 解析 space_id、company_from、domain
+       ② space_describe_space 验证可访问性，提取 space_name
+       ③ 写入 ~/.fetch_article/config.json（用户级，永不入 git）
+       ④ 写入 <工作区>/.cursor/rules/fetch-archive-defaults.mdc（工作区覆盖）
+          并将该文件加入工作区 .gitignore
+       ⑤ 提示：「已配置，后续默认转存到「{space_name}」」
+       ⑥ 继续执行原始任务
+```
+
+更新配置：直接告知 Agent "把默认知识库改成 XX"，Agent 重复步骤 ③④ 覆盖写入。
 
 **步骤 1：获取知识库根节点**
 - `space_describe_space(space_id)` → 提取 `root_entry_id`
