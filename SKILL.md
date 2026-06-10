@@ -55,7 +55,43 @@ python3 scripts/fetch_article.py fetch "<URL>" --output-dir <项目子目录>
 python3 scripts/fetch_article.py fetch "<URL>" --output-dir <项目子目录> --cdp
 ```
 
-**CDP 前置条件**：Chrome 已开启 `--remote-debugging-port=9222`
+**CDP 模式说明**：
+
+脚本会**自动**完成 Chrome 启动与 Cookie 同步，无需手动操作：
+1. 检测 `127.0.0.1:9222` 是否已有 Chrome 运行 → 有则直接复用
+2. 没有则自动启动 Chrome，使用永久 CDP Profile：`~/.fetch_article/chrome_cdp_profile`
+3. 自动将用户日常 Chrome 的 Cookies 同步到 CDP Profile（大多数已登录网站无需重新登录）
+
+**永久 CDP Profile 设计原则**：
+
+```
+日常 Chrome                        CDP Chrome（抓取专用）
+~/Library/.../Chrome/Default       ~/.fetch_article/chrome_cdp_profile
+（历史、书签、密码）                （独立 Profile，脚本自动管理）
+                                            ↑
+                                   每次启动前自动同步日常 Chrome Cookies
+```
+
+- 两个 Chrome 可同时运行，**互不影响**
+- CDP Profile 是永久目录（非 `/tmp`），登录状态跨会话保留
+- 付费网站（如 SemiAnalysis）首次在 CDP Chrome 中手动登录一次，后续永久复用
+
+**手动启动 CDP Chrome（当脚本无法自动启动时）**：
+
+> 在 Cursor 环境中，Agent 的 Shell 进程结束时子进程会被一并终止。遇到此情况，用以下命令通过 macOS Launch Services 启动（完全独立于 Shell 生命周期）：
+
+```bash
+# 使用永久 CDP Profile（不会丢失登录状态）
+open -a "Google Chrome" --args \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.fetch_article/chrome_cdp_profile" \
+  --no-first-run --no-default-browser-check
+
+# 或使用快捷脚本
+~/.fetch_article/start-cdp-chrome.sh
+```
+
+> 🚫 **禁止**使用 `/tmp/chrome-cdp-profile`（临时目录，重启后登录状态全失）
 
 **产出物**：
 - `<项目子目录>/<标题>.md` — Markdown 正文
@@ -116,8 +152,8 @@ python3 scripts/fetch_article.py fetch "<URL>" --output-dir <项目子目录> --
 | 情况 | 方式 |
 |------|------|
 | 微信公众号 | `file_create_hyperlink`（一步到位，后端自动抓图文） |
-| 有图片的文章（✅ 首选） | MCP connector "先全文后补图"（见 [lexiang-upload.md](references/lexiang-upload.md)） |
-| 有图片的文章（备选） | `scripts/md_to_page.py --parent-id <日期目录ID> --name "标题"`（需 LEXIANG_TOKEN） |
+| 有图片的文章（✅ 首选） | `scripts/md_to_page.py --parent-id <日期目录ID> --name "标题"`（需 LEXIANG_TOKEN，见下方获取方式） |
+| 有图片的文章（备选） | MCP connector "先全文后补图"（见 [lexiang-upload.md](references/lexiang-upload.md)，无需 TOKEN） |
 | 纯文本 ≤30K 字符 | `entry_import_content(parent_id, name, content, content_type="markdown")` |
 | **纯文本 >30K 字符（大文档）** | **`scripts/upload_doc_to_lexiang.py`**（见下方） |
 | 视频/音频（仅上传文件） | `scripts/upload_video_via_openapi.py --media-type video/audio` |
@@ -139,7 +175,16 @@ python3 scripts/upload_doc_to_lexiang.py <文件.md> \
 # → 输出 JSON 指令，Agent 按指令执行 file_apply_upload → curl PUT → file_commit_upload
 ```
 
-> ⚠️ **LEXIANG_TOKEN 有效期约 2 小时**，过期后 `md_to_page.py` 的图片上传全部失败（401）。MCP connector 不受 token 过期影响，因此有图片的文章**首选 MCP connector 方式**。`md_to_page.py` 仅在 token 新鲜时作为更便捷的备选。
+**LEXIANG_TOKEN 获取方式**：
+
+```bash
+# 方式一（推荐）：直接从 Cursor MCP 配置读取（Cursor 会自动维护此 token）
+python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['mcpServers']['lexiang']['headers']['Authorization'].replace('Bearer ',''))"
+
+# 方式二：访问 https://lexiangla.com/mcp 手动获取（格式：lxmcp_xxx）
+```
+
+> ⚠️ **LEXIANG_TOKEN 有效期约 2 小时**，过期后 `md_to_page.py` 的图片上传全部失败（401）。每次使用 `md_to_page.py` 前，先用方式一从 `~/.cursor/mcp.json` 读取最新 token。MCP connector 方式不受 token 过期影响，可作为兜底。
 
 ## 脚本文件
 
@@ -160,7 +205,7 @@ python3 scripts/upload_doc_to_lexiang.py <文件.md> \
 - 🚨 **日期目录**必须先查再建，创建后必须用 `before` 置顶
 - 🚨 **图片处理**贯穿全流程，`entry_import_content` / `entry_import_content_to_entry` **不会上传任何图片**。在 content 中写 `![alt](url)` 或 `<image src="url"/>` 会产生**空图片 block**（有 image 标签但无 file_id，页面显示空白），而不是跳过图片。图片只能通过 `block_apply_block_attachment_upload` → `curl PUT` → `block_create_block_descendant(image.session_id)` 三步流程上传
 - 🚨 **`after=""`** 是排末尾不是置顶，禁止使用
-- 🚨 **LEXIANG_TOKEN 有效期约 2 小时**，过期后 `md_to_page.py` 图片上传全部 401。有图片文章首选 MCP connector 方式
+- 🚨 **LEXIANG_TOKEN 有效期约 2 小时**，每次用 `md_to_page.py` 前先从 `~/.cursor/mcp.json` 读取最新 token（`python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['mcpServers']['lexiang']['headers']['Authorization'])"`)；token 失效时回退到 MCP connector 方式
 
 ## 参考文档（按需加载）
 
