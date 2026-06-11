@@ -1,12 +1,21 @@
 ---
 name: fetch-archive-to-lexiang
-description: 通用文章抓取与归档工具。抓取任意 URL（免费/付费/登录墙）的文章全文，转换为结构化 Markdown，并可选转存到乐享知识库。支持
-  Substack、Medium、知识星球等付费平台的登录态管理。支持 YouTube
-  视频下载（yt-dlp）、播客音频下载（小宇宙FM等）、音频转录（Whisper）、翻译（中英对照格式），并将音视频和文字稿上传乐享知识库（文字稿使用在线文档格式，支持按块编辑）。支持
-  PDF 文件/链接：自动提取文本+精确裁剪图形，非中文内容默认翻译为中英对照后转存乐享。支持微博帖子抓取（CDP
-  模式绕过登录墙）。关键词触发：抓取文章、获取全文、付费文章、转存知识库、乐享、保存原文、fetch
-  article、归档、YouTube、视频转录、字幕提取、视频下载、播客、podcast、小宇宙、xiaoyuzhou、PDF、论文、arxiv、微博、weibo。
-disable: true
+version: "2.1.0"
+author: ajaxhe
+license: MIT
+description: Fetch paywalled articles (Substack/Medium), transcribe YouTube & podcasts, extract & translate PDFs. Archive to Lexiang knowledge base. 抓取付费文章、YouTube/播客转录、PDF翻译归档，转存乐享知识库。
+tags: fetch, archive, youtube, podcast, pdf, transcribe, lexiang, paywall, substack, medium, arxiv, weibo, chinese
+disable-model-invocation: true
+requires:
+  mcp:
+    - lexiang
+  binaries:
+    - python3
+    - yt-dlp
+  python:
+    - playwright
+    - pymupdf
+    - openai-whisper
 ---
 
 # 抓取链接内容 & 转存知识库

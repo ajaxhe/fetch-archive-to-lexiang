@@ -1,0 +1,181 @@
+name: Publish to SkillHub Platforms
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "SKILL.md"
+      - "scripts/**"
+      - "references/**"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (preview only, no actual publish)"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Platform 1: agentskillhub.dev (via REST API)
+  # ─────────────────────────────────────────────
+  publish-agentskillhub:
+    name: "agentskillhub.dev"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Analyze repo on agentskillhub.dev
+        id: analyze
+        run: |
+          echo "📡 Submitting to agentskillhub.dev..."
+          REPO_URL="https://github.com/${{ github.repository }}"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://agentskillhub.dev/api/v1/repos/analyze" \
+            -H "Content-Type: application/json" \
+            -d "{\"url\": \"$REPO_URL\"}")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          echo "body=$BODY" >> $GITHUB_OUTPUT
+          echo "http_code=$HTTP_CODE" >> $GITHUB_OUTPUT
+
+      - name: Import skill on agentskillhub.dev
+        if: ${{ inputs.dry_run != 'true' && steps.analyze.outputs.http_code == '200' }}
+        run: |
+          REPO_URL="https://github.com/${{ github.repository }}"
+
+          curl -s -X POST \
+            "https://agentskillhub.dev/api/v1/repos/import" \
+            -H "Content-Type: application/json" \
+            -d "{\"url\": \"$REPO_URL\", \"skills\": [\"fetch-archive-to-lexiang\"]}"
+
+          echo "✅ agentskillhub.dev import triggered"
+
+  # ─────────────────────────────────────────────
+  # Platform 2: skills-hub.ai (via CLI)
+  # Secret: SKILLSHUBAI_TOKEN
+  # Get it: npx @skills-hub-ai/cli login → copy token from ~/.skills-hub/token
+  # ─────────────────────────────────────────────
+  publish-skillshubai:
+    name: "skills-hub.ai"
+    runs-on: ubuntu-latest
+    if: ${{ inputs.dry_run != 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Publish to skills-hub.ai
+        env:
+          SKILLSHUBAI_TOKEN: ${{ secrets.SKILLSHUBAI_TOKEN }}
+        run: |
+          if [ -z "$SKILLSHUBAI_TOKEN" ]; then
+            echo "⚠️  SKILLSHUBAI_TOKEN not set — skipping skills-hub.ai"
+            echo "   Setup: npx @skills-hub-ai/cli login"
+            echo "   Then: add token to GitHub repo secrets as SKILLSHUBAI_TOKEN"
+            exit 0
+          fi
+
+          # Write token to config location
+          mkdir -p ~/.skills-hub
+          echo "$SKILLSHUBAI_TOKEN" > ~/.skills-hub/token
+
+          npx @skills-hub-ai/cli publish . \
+            --github-repo "https://github.com/${{ github.repository }}" \
+            --tags "fetch,archive,youtube,podcast,pdf,chinese,lexiang,paywall,substack,medium"
+
+          echo "✅ Published to skills-hub.ai"
+
+  # ─────────────────────────────────────────────
+  # Platform 3: clawhub.ai (via clawhub CLI)
+  # Secret: CLAWHUB_TOKEN
+  # Get it: clawhub login → copy token from ~/.clawhub/token (or clawhub whoami --token)
+  # ─────────────────────────────────────────────
+  publish-clawhub:
+    name: "clawhub.ai"
+    runs-on: ubuntu-latest
+    if: ${{ inputs.dry_run != 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Publish to clawhub.ai
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          if [ -z "$CLAWHUB_TOKEN" ]; then
+            echo "⚠️  CLAWHUB_TOKEN not set — skipping clawhub.ai"
+            echo "   Setup: npm install -g @clawhub/cli && clawhub login"
+            echo "   Then: add token to GitHub repo secrets as CLAWHUB_TOKEN"
+            exit 0
+          fi
+
+          npm install -g @clawhub/cli --silent
+
+          # Authenticate via env token
+          clawhub whoami --token "$CLAWHUB_TOKEN" 2>/dev/null || true
+
+          clawhub skill publish . \
+            --slug fetch-archive-to-lexiang \
+            --name "Fetch & Archive to Lexiang" \
+            --version "2.1.0" \
+            --changelog "See README.md for full changelog" \
+            --tags latest
+
+          echo "✅ Published to clawhub.ai"
+
+  # ─────────────────────────────────────────────
+  # Platform 4: agent-skills-hub (GitHub PR)
+  # Only runs on workflow_dispatch to avoid spamming PRs
+  # ─────────────────────────────────────────────
+  publish-agentskillshub-pr:
+    name: "agent-skills-hub (PR)"
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fork & PR to agent-skills-hub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "📦 Submitting to agent-skills-hub GitHub..."
+
+          # Clone the target repo (public, no auth needed)
+          git clone https://github.com/agent-skills-hub/agent-skills-hub /tmp/agent-skills-hub
+
+          # Copy our skill directory
+          mkdir -p /tmp/agent-skills-hub/skills/fetch-archive-to-lexiang
+          cp -r . /tmp/agent-skills-hub/skills/fetch-archive-to-lexiang/
+          rm -rf /tmp/agent-skills-hub/skills/fetch-archive-to-lexiang/.git
+          rm -rf /tmp/agent-skills-hub/skills/fetch-archive-to-lexiang/.github
+
+          cd /tmp/agent-skills-hub
+
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+          git checkout -b "add-fetch-archive-to-lexiang"
+          git add skills/fetch-archive-to-lexiang/
+          git commit -m "feat: add fetch-archive-to-lexiang skill
+
+          Universal web article fetcher and archiver:
+          - Bypass paywalls (Substack, Medium, 知识星球)
+          - YouTube video download + Whisper transcription
+          - Podcast audio download + transcription
+          - PDF extraction with bilingual translation
+          - Archive to Lexiang knowledge base
+
+          Source: https://github.com/${{ github.repository }}"
+
+          echo "⚠️  To complete PR submission:"
+          echo "   gh repo fork agent-skills-hub/agent-skills-hub --clone"
+          echo "   # then push the branch and open a PR"
+          echo "   The automated fork requires higher GitHub token permissions."
