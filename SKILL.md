@@ -3,6 +3,7 @@ name: fetch-archive-to-lexiang
 version: "2.1.0"
 author: ajaxhe
 license: MIT
+category: research
 description: Fetch paywalled articles (Substack/Medium), transcribe YouTube & podcasts, extract & translate PDFs. Archive to Lexiang knowledge base. 抓取付费文章、YouTube/播客转录、PDF翻译归档，转存乐享知识库。
 tags: fetch, archive, youtube, podcast, pdf, transcribe, lexiang, paywall, substack, medium, arxiv, weibo, chinese
 disable-model-invocation: true
