@@ -88,13 +88,13 @@ publish_agentskillhub() {
   log_section "Platform 1: agentskillhub.dev"
 
   echo "📡 分析仓库..."
-  ANALYZE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+  ANALYZE_RESPONSE=$(curl -s -o /tmp/analyze_body.json -w "%{http_code}" -X POST \
     "https://agentskillhub.dev/api/v1/repos/analyze" \
     -H "Content-Type: application/json" \
     -d "{\"url\": \"${GITHUB_REPO_URL}\"}")
 
-  HTTP_CODE=$(echo "$ANALYZE_RESPONSE" | tail -1)
-  BODY=$(echo "$ANALYZE_RESPONSE" | head -n -1)
+  HTTP_CODE="$ANALYZE_RESPONSE"
+  BODY=$(cat /tmp/analyze_body.json 2>/dev/null || echo "{}")
 
   echo "HTTP $HTTP_CODE: $BODY"
 
@@ -161,17 +161,18 @@ publish_skillshubai() {
 publish_clawhub() {
   log_section "Platform 3: clawhub.ai"
 
-  if ! command -v clawhub &>/dev/null && ! npm list -g @clawhub/cli &>/dev/null 2>&1; then
+  if ! command -v clawhub &>/dev/null; then
     echo "安装 clawhub CLI..."
     run_or_dry "npm install -g @clawhub/cli"
   fi
 
   # 检查是否已登录
-  if clawhub whoami &>/dev/null 2>&1; then
-    log_info "已登录 clawhub.ai"
+  CLAWHUB_USER=$(clawhub whoami 2>/dev/null | grep -v '^-' | tr -d '[:space:]' || echo "")
+  if [ -n "$CLAWHUB_USER" ]; then
+    log_info "已登录 clawhub.ai（用户：${CLAWHUB_USER}）"
   else
     log_warn "未登录 clawhub.ai，正在打开登录流程..."
-    echo "  → 需要 GitHub OAuth 授权"
+    echo "  → 需要 GitHub OAuth 授权（会打开浏览器）"
     run_or_dry "clawhub login"
     echo ""
     read -r -p "登录完成了吗？(y/N) " confirm
@@ -181,16 +182,20 @@ publish_clawhub() {
     fi
   fi
 
+  # 发布：clawhub 需要 --workdir 指向 skills 的父目录
+  SKILLS_PARENT="$(dirname "${SKILL_DIR}")"
+
   if [ "$DRY_RUN" = false ]; then
-    run_or_dry "clawhub skill publish . \
+    run_or_dry "clawhub --workdir '${SKILLS_PARENT}' publish '${SKILL_NAME}' \
       --slug '${SKILL_NAME}' \
       --name 'Fetch & Archive to Lexiang' \
       --version '${SKILL_VERSION}' \
       --changelog 'See README.md for full changelog' \
-      --tags latest"
-    log_info "clawhub.ai 发布成功"
+      --tags 'latest,fetch,archive,youtube,podcast,pdf,chinese,lexiang' \
+      --clawscan-note 'Uses Chrome CDP for authenticated scraping, Lexiang MCP APIs, yt-dlp/Whisper for transcription.'"
+    log_info "clawhub.ai 发布成功 → https://clawhub.ai/skills/${SKILL_NAME}"
   else
-    echo "[DRY RUN] clawhub skill publish . --slug ${SKILL_NAME} --version ${SKILL_VERSION}"
+    echo "[DRY RUN] clawhub --workdir ${SKILLS_PARENT} publish ${SKILL_NAME} --version ${SKILL_VERSION}"
   fi
 }
 
