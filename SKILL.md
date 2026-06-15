@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "2.1.0"
+version: "2.2.0"
 author: ajaxhe
 license: MIT
 category: research
@@ -34,10 +34,40 @@ requires:
 ## 工作流程总览
 
 ```
+Step 0: 🔍 预检（读取自省日志 + 侦察原文）  ← 新增！每次必做
 Step 1: 素材收集（抓取原文+图片）
 Step 2: 语言检测 → 非中文则翻译为中英对照
 Step 3: 转存到乐享知识库（日期目录 + 图文导入）
+Step 4: ✅ 交付自检（对照清单逐项验证）      ← 新增！每次必做
+Step 5: 📝 自省（有问题则更新 lessons-learned.md）
 ```
+
+## Step 0：预检（🚨 每次任务开头必做，不可跳过）
+
+**0a. 读取自省日志**
+- 读取 [references/lessons-learned.md](references/lessons-learned.md) 中的 🔴 P0 教训
+- 将 P0 教训作为本次执行的「红线清单」，在后续每个决策点主动对照
+
+**0b. 侦察原文**
+- 用 `WebFetch` 快速扫描原文，**明确记录**以下信息：
+  - 文章标题、作者、日期
+  - 📸 **是否包含图片？有几张？** ← 这是最容易遗漏的！
+  - 文章语言（中文/英文/其他）
+  - 文章长度（短/中/长）
+  - 是否有付费墙/登录墙
+- 基于侦察结果，**在开始抓取前向用户确认执行计划**：
+  ```
+  📋 预检报告：
+  - 标题：XXX
+  - 语言：英文 → 需翻译为中英对照
+  - 图片：发现 N 张配图 → 将使用 fetch_article.py 抓取
+  - 预计上传方式：md_to_page.py（含图片）
+  ```
+
+**0c. 抓取方式决策**
+- 有图片 → **必须**用 `fetch_article.py`，**禁止**仅用 WebFetch
+- 无图片 + 无付费墙 → 可用 WebFetch 内容直接导入
+- 有付费墙 → `fetch_article.py --cdp`
 
 ## Step 1：素材收集（抓取方式决策树）
 
@@ -247,6 +277,40 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 - 🚨 **`after=""`** 是排末尾不是置顶，禁止使用
 - 🚨 **LEXIANG_TOKEN 有效期约 2 小时**，每次用 `md_to_page.py` 前先从 `~/.cursor/mcp.json` 读取最新 token（`python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['mcpServers']['lexiang']['headers']['Authorization'])"`)；token 失效时回退到 MCP connector 方式
 
+## Step 4：交付自检（🚨 每次任务结尾必做，不可跳过）
+
+上传完成后，**必须**逐项检查以下清单，在回复用户时附上检查结果：
+
+```
+✅ 交付自检清单：
+□ 1. 标题正确：文档标题与原文标题一致
+□ 2. 原文链接：文档中包含可追溯的原始 URL
+□ 3. 图片完整：原文有 N 张图 → 乐享文档中有 N 张图（用 block_list_block_children 验证 image block 存在且有 file_id）
+□ 4. 翻译完整：非中文文章已翻译为中英对照，无遗漏段落
+□ 5. 格式规范：标题层级、列表、引用等格式保留
+□ 6. 目录正确：文档在正确的日期目录/指定目录下
+□ 7. 链接可访问：返回的乐享链接格式正确
+```
+
+**图片验证方法**（第3项详细步骤）：
+1. `block_list_block_children(entry_id=<文档ID>)` 获取所有 block
+2. 筛选 `block_type == "image"` 的 block
+3. 检查每个 image block 是否有 `file_id`（有 = 图片上传成功，无 = 空图片占位符）
+4. 如果发现空图片 block → 立即补传图片，不要等用户发现
+
+## Step 5：自省与学习
+
+**触发条件**（满足任一即执行）：
+1. 用户指出了本次执行中的错误或遗漏
+2. 自检清单中有未通过的项
+3. 执行过程中发现了新的技巧或踩坑经验
+
+**执行动作**：
+- 读取 [references/lessons-learned.md](references/lessons-learned.md)
+- 将新的教训追加到对应的严重性分级中
+- 如果是 P0 级别的新教训 → 同时更新 SKILL.md 的核心规则或自检清单
+- 更新规则演化记录表
+
 ## 参考文档（按需加载）
 
 | 文件 | 何时加载 |
@@ -258,3 +322,4 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 | [references/platform-specific.md](references/platform-specific.md) | 微信公众号/得到/SPA/微博等特定平台 |
 | [references/tips-experience.md](references/tips-experience.md) | 经验总结、平台适配思路 |
 | [references/troubleshooting.md](references/troubleshooting.md) | 常见问题排查 |
+| [references/lessons-learned.md](references/lessons-learned.md) | 🔴 **每次执行前必读**：自省日志，历史教训和规则演化 |
