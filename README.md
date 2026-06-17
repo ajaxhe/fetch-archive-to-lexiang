@@ -2,7 +2,7 @@
 
 通用 AI Agent Skill：抓取文章 / 视频 / 播客 / PDF 论文，并归档到[乐享](https://lexiangla.com)知识库。
 
-适用于 [CodeBuddy](https://www.codebuddy.ai/)、[OpenClaw](https://github.com/anthropics/openclaw)、[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Gemini CLI](https://github.com/google-gemini/gemini-cli) 等所有支持 Skill / Custom Instructions 机制的 AI Agent。
+适用于 [WorkBuddy](https://www.codebuddy.cn/docs/workbuddy/Overview)、[QClaw](https://qclaw.qq.com)、[CodeBuddy](https://www.codebuddy.ai/)、[OpenClaw](https://openclaw.ai/)、[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Gemini CLI](https://github.com/google-gemini/gemini-cli) 等所有支持 Skill / Custom Instructions 机制的 AI Agent。
 
 ## 功能概述
 
@@ -203,6 +203,8 @@ cp config.json.example config.json
 
 | Agent | 支持方式 | 说明 |
 |-------|---------|------|
+| **WorkBuddy** | `~/.workbuddy/skills/` | 原生 Skill 目录，自动加载 |
+| **QClaw** | `.qclaw/skills/` | 原生 Skill 目录，自动加载 |
 | **CodeBuddy** | `.codebuddy/skills/` | 原生 Skill 目录，自动加载 |
 | **OpenClaw** | `.claude/skills/` | 通过 Custom Instructions 加载 SKILL.md |
 | **Claude Code** | `.claude/skills/` | 同 OpenClaw |
