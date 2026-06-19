@@ -37,6 +37,24 @@
 - **问题**：config.json 中的"贾维斯"知识库在当前 MCP 账号下不可用，导致 API 报错
 - **正确做法**：优先使用用户记忆中的目标知识库（ajaxhe的个人知识库），config.json 作为 fallback
 
+### 🟡 P1 — 偶尔犯的错误（需要注意）
+
+#### L007: 沙箱环境下 fetch_article.py 降级方案实操（2026-06-18 验证）
+- **问题**：WorkBuddy/Cursor 沙箱阻止访问 `~/.fetch_article`，fetch_article.py CDP 模式无法创建 profile 目录；且 managed python venv 无 playwright/chromium
+- **降级路径**（L001 认可的方案，本次完整跑通）：
+  1. `curl -sL -A "<UA>" "<URL>" -o raw.html` 抓取完整 HTML（Substack 免费文章可达）
+  2. grep 统计 `<img` 和 substack-post-media 图片 URL，确认图片数量
+  3. `curl` 逐张下载正文图片到 `images/`（用 s3 原图 URL，排除头像/图标）
+  4. python(bs4+html2text) 解析 `<div class="body markup">` 提取正文，按 s3 图片 ID 映射 `<img src>` 到本地路径
+  5. 生成中英对照 markdown（图片引用 `![](images/xxx)`）
+  6. 纯文字版（图片引用替换为 `[图片: xxx]` 占位）用 `entry_import_content` 一次性导入
+  7. `block_list_block_children` 定位占位 block 的 index
+  8. **从后往前**逐张：`block_apply_block_attachment_upload` → `curl PUT` 上传 → `block_create_block_descendant(index="占位index+1")` → `block_delete_block(占位block_id)`
+- **关键技巧**：
+  - 删除占位用 `block_id`（不依赖 index），插入图片用 `index`（基于推算）。两者区域不重叠时可并行
+  - 从后往前处理，避免前面插入/删除影响后面的 index
+  - `bs4` 用内置 `html.parser`，不需要 `lxml`；`html2text` 转 markdown 保留图片位置
+
 ### 🟢 P2 — 已修复的小问题（备忘）
 
 #### L005: `after=""` 不是置顶
