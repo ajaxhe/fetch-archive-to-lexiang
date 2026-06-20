@@ -44,8 +44,19 @@ def import_content(base_url, cf, token, entry_id, md_text, force_write=False):
 
 def upload_image(base_url, cf, token, entry_id, img_path, img_name):
     size = os.path.getsize(img_path)
-    ext = img_name.rsplit(".", 1)[-1].lower()
-    mime = "image/png" if ext == "png" else "image/jpeg"
+    # Detect actual MIME type based on file content, not extension
+    # Substack CDN sometimes saves JPEG files with .png extension
+    try:
+        import subprocess
+        fmt = subprocess.check_output(["sips", "-g", "format", img_path], stderr=subprocess.DEVNULL).decode()
+        if "jpeg" in fmt.lower() or "jpg" in fmt.lower():
+            mime = "image/jpeg"
+        else:
+            mime = "image/png"
+    except (subprocess.SubprocessError, FileNotFoundError):
+        # Fallback to extension-based detection
+        ext = img_name.rsplit(".", 1)[-1].lower()
+        mime = "image/png" if ext == "png" else "image/jpeg"
     result = call_mcp_tool(base_url, cf, token, "block_apply_block_attachment_upload", {
         "entry_id": entry_id, "name": img_name, "size": str(size), "mime_type": mime})
     if "error" in result:

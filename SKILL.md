@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "2.2.0"
+version: "2.3.0"
 author: ajaxhe
 license: MIT
 category: research
@@ -30,6 +30,7 @@ requires:
 3. **乐享链接格式**：按步骤 0 读取的 `access_domain.page_url_template` 生成（禁止 `mcp.lexiang-app.com`，禁止硬编码 company_from）
 4. **非中文内容必须翻译**：中英对照格式（每段英文后紧跟中文翻译）
 5. **图片不可丢失**：有图片的文章必须用 `fetch_article.py` 抓取 + `md_to_page.py` 导入
+6. **🚨 翻译必须保留图片语法**：中英对照翻译时，原文的 `![alt](images/xxx)` 图片引用**必须原样保留在对应位置**，禁止替换为 `[IMG_PLACEHOLDER_N]` 或任何非标准占位符。`md_to_page.py` 依赖 `![](...)` 语法来拆分文本和图片段——占位符会导致图片语法无法被识别，被迫走 MCP 手动定位路径（index 不可靠），最终图片错位或缺失
 
 ## 工作流程总览
 
@@ -154,6 +155,12 @@ open -a "Google Chrome" --args \
 *By Author · Date · Platform*
 ```
 
+🚨 **图片语法保留规则（翻译时必须遵守）**：
+- 原文中的 `![alt](images/xxx)` 图片引用**必须原样保留**，不得替换为 `[IMG_PLACEHOLDER_N]` 或任何非标准格式
+- 图片引用应放在对应段落的上方或下方，确保图文对应关系不丢失
+- alt 文本可翻译为双语（如 `![Zone of Genius framework / 天才区域框架](images/img_03_xxx.png)`）
+- 这条规则是核心规则#6 的具体执行指引，违反会导致 `md_to_page.py` 无法自动处理图片
+
 ## Step 3：转存乐享知识库
 
 > 详细的上传步骤、降级方案、图片处理见 [lexiang-upload.md](references/lexiang-upload.md)
@@ -274,6 +281,7 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 - 🚨 **视频/音频上传**必须用 `upload_video_via_openapi.py`（走 VOD），不用 MCP 的 `file_apply_upload`
 - 🚨 **日期目录**必须先查再建，创建后必须用 `before` 置顶
 - 🚨 **图片处理**贯穿全流程，`entry_import_content` / `entry_import_content_to_entry` **不会上传任何图片**。在 content 中写 `![alt](url)` 或 `<image src="url"/>` 会产生**空图片 block**（有 image 标签但无 file_id，页面显示空白），而不是跳过图片。图片只能通过 `block_apply_block_attachment_upload` → `curl PUT` → `block_create_block_descendant(image.session_id)` 三步流程上传
+- 🚨 **`block_create_block_descendant` 的 index 参数**不等于 `block_list_block_children` 返回的直接子节点位置。API 使用包含嵌套子节点（quote/callout/toggle 等容器块的 children）的**扁平索引系统**。经验值：靠近页面顶部 offset 约 +1-2，页面中后部（Section 2-3）offset 约 +4-5。估算公式：直接子节点位置 + 前面所有嵌套子节点数量。**根本解法：用 `md_to_page.py` 自动处理图片位置，避免手动计算 index**
 - 🚨 **`after=""`** 是排末尾不是置顶，禁止使用
 - 🚨 **LEXIANG_TOKEN 有效期约 2 小时**，每次用 `md_to_page.py` 前先从 `~/.cursor/mcp.json` 读取最新 token（`python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['mcpServers']['lexiang']['headers']['Authorization'])"`)；token 失效时回退到 MCP connector 方式
 
@@ -286,17 +294,20 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 □ 1. 标题正确：文档标题与原文标题一致
 □ 2. 原文链接：文档中包含可追溯的原始 URL
 □ 3. 图片完整：原文有 N 张图 → 乐享文档中有 N 张图（用 block_list_block_children 验证 image block 存在且有 file_id）
-□ 4. 翻译完整：非中文文章已翻译为中英对照，无遗漏段落
-□ 5. 格式规范：标题层级、列表、引用等格式保留
-□ 6. 目录正确：文档在正确的日期目录/指定目录下
-□ 7. 链接可访问：返回的乐享链接格式正确
+□ 4. 图片位置：用 block_fetch_page(render_mode="clean") 检查每张图片是否在正确的段落之间（不是聚集在页面底部或嵌套在引用块内）
+□ 5. 翻译完整：非中文文章已翻译为中英对照，无遗漏段落
+□ 6. 格式规范：标题层级、列表、引用等格式保留
+□ 7. 目录正确：文档在正确的日期目录/指定目录下
+□ 8. 链接可访问：返回的乐享链接格式正确
 ```
 
-**图片验证方法**（第3项详细步骤）：
-1. `block_list_block_children(entry_id=<文档ID>)` 获取所有 block
-2. 筛选 `block_type == "image"` 的 block
-3. 检查每个 image block 是否有 `file_id`（有 = 图片上传成功，无 = 空图片占位符）
-4. 如果发现空图片 block → 立即补传图片，不要等用户发现
+**图片验证方法**（第3-4项详细步骤）：
+1. `block_list_block_children(entry_id=<文档ID>, with_descendants=True)` 获取所有 block
+2. 筛选 `block_type == "image"` 的 block，检查是否有 `file_id`（有 = 上传成功，无 = 空占位符）
+3. `block_fetch_page(entry_id=<文档ID>, render_mode="clean")` 获取渲染输出
+4. 对照原文图片位置，逐张验证图片是否出现在正确的段落之间
+5. 如果发现图片错位 → 删除错位 block → 用 `file_id` 在正确位置重新创建（无需重新上传）
+6. 如果发现空图片 block → 立即补传图片，不要等用户发现
 
 ## Step 5：自省与学习
 

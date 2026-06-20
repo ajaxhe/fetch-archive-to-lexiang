@@ -459,13 +459,24 @@ python3 scripts/md_to_page.py "<原文标题>_translated.md" \
        - 跨语言匹配：翻译后的文档用中文锚点搜索比英文锚点更可靠
        - 找到锚点 block 后，图片插入位置 = 该 block 的 index + 1
     3. 对每张图片：
-       a. block_apply_block_attachment_upload（entry_id, name=<文件名>, size=<字节数字符串>, mime_type="image/png"）→ session_id + upload_url
+       a. **先检测实际格式**：`sips -g format images/<文件名>` → 输出 `jpeg` 则 mime_type="image/jpeg"，输出 `png` 则 mime_type="image/png"
+          ⚠️ 文件扩展名不一定反映实际格式！Substack CDN 会将 JPEG 图片保存为 .png 扩展名
+          ⚠️ Content-Type 不匹配实际格式 → COS 返回 403 Forbidden
+       b. block_apply_block_attachment_upload（entry_id, name=<文件名>, size=<字节数字符串>, mime_type=<检测到的实际格式>）→ session_id + upload_url
           ⚠️ size 参数必须是字符串类型（如 "54541"），传整数会导致参数校验失败
-       b. curl -X PUT "<upload_url>" -H "Content-Type: image/png" -H "Content-Length: <size>" --data-binary @images/<文件名>
-          ⚠️ 必须带 Content-Type 和 Content-Length 两个 header，否则 COS 返回 403 Forbidden
-          ⚠️ mime_type 需与文件实际格式匹配：.png → image/png，.jpg/.jpeg → image/jpeg
-       c. block_create_block_descendant（entry_id, parent_block_id=<page_root_block_id>, index=<占位block的index+1>, descendant=[{block_type: "image", image: {session_id}}]）
-    4. 每插入一张图片后，后续图片的 index 需 +1
+       c. **上传到 COS**（🚨 禁止用 curl，必须用 Python urllib.request）：
+          ```python
+          import urllib.request
+          req = urllib.request.Request(upload_url, data=file_bytes, method='PUT')
+          req.add_header('Content-Type', mime_type)
+          req.add_header('Content-Length', str(size))
+          resp = urllib.request.urlopen(req)
+          ```
+          ⚠️ curl 命令在 COS 上传时会出现 403（URL 含特殊字符 %2F/%3B 等，curl 处理有问题），必须用 Python urllib.request
+       d. block_create_block_descendant（entry_id, parent_block_id=<page_root_block_id>, index=<占位block的flat_index+1>, descendant=[{block_type: "image", image: {session_id}}]）
+          ⚠️ index 不等于 block_list 的直接子节点位置！API 使用包含嵌套子节点的扁平索引系统
+          ⚠️ 估算公式：直接子节点位置 + 前面所有嵌套子节点数量（quote/callout/toggle 的 children 计入）
+          ⚠️ 建议从后往前插入，避免前面插入影响后续 index
     5. 如遇限频，等待 5 秒后重试
   
   步骤 A3（替代）：交替导入方式（更简单但更慢）
@@ -478,11 +489,12 @@ python3 scripts/md_to_page.py "<原文标题>_translated.md" \
     ⚠️ 此方式每个文字段需间隔 10s 避免限频，47张图的文章可能需要 8+ 分钟
   ```
   
-  > **⚠️ 为什么「先全文后补图」现在是推荐方式？**
-  > 1. `entry_import_content` 一次性写入无限频问题，速度最快
-  > 2. `block_list_block_children` + `block_create_block_descendant` 可以精确在任意 index 插入图片
-  > 3. 图片上传接口（`block_apply_block_attachment_upload`）通常不受限频保护
-  > 4. 避免了交替导入中每段文字都要 sleep 10s 的性能问题
+  > **⚠️ 图片上传路径优先级**：
+  > 1. 🥇 `md_to_page.py`（LEXIANG_TOKEN 可用时）→ 自动交替导入文字+图片，无需手动计算 index，一步到位
+  > 2. 🥈 MCP「先全文后补图」（LEXIANG_TOKEN 不可用时）→ 需手动计算 index，图片位置可能偏差，需要 trial-and-error 验证
+  > 3. 🥉 MCP「交替导入」（极简但慢）→ 每段文字需 sleep 10s 避限频
+  >
+  > **⚠️ 为确保 md_to_page.py 可用，翻译时必须保留 `![alt](images/xxx)` 图片语法，禁止替换为 `[IMG_PLACEHOLDER]`！**
   > 
   > **⚠️ 小图片（<50KB 的 icon/分隔线/SVG 装饰图）可跳过**，只上传有信息量的关键图片（图表/截图/概念图）。
   

@@ -70,7 +70,7 @@
 ```bash
 # 因为转录耗时长（139分钟音频约10分钟），必须 nohup 后台运行
 cd <工作目录> && nohup /usr/bin/python3 \
-  /Users/ajaxhe/.workbuddy/skills/fetch-archive-to-lexiang/scripts/podcast_to_lexiang.py \
+  <skill_dir>/scripts/podcast_to_lexiang.py \
   "<播客链接>" \
   --output-dir ./output \
   --language zh \
