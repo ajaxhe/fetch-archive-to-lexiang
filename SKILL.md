@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "2.3.0"
+version: "2.4.0"
 author: ajaxhe
 license: MIT
 category: research
@@ -29,8 +29,9 @@ requires:
    - **不可编辑文件**（视频、音频、PDF等）：上传后通过 `knowledge_tag_set_entry_tags` 或 `comment_list_comments` → 评论方式附上原文链接
 3. **乐享链接格式**：按步骤 0 读取的 `access_domain.page_url_template` 生成（禁止 `mcp.lexiang-app.com`，禁止硬编码 company_from）
 4. **非中文内容必须翻译**：中英对照格式（每段英文后紧跟中文翻译）
-5. **图片不可丢失**：有图片的文章必须用 `fetch_article.py` 抓取 + `md_to_page.py` 导入
+5. **图片不可丢失**：有图片的文章必须用 `fetch_article.py` 抓取 + `md_to_page.py` 导入（或 MCP Direct HTTP Call 降级方案）
 6. **🚨 翻译必须保留图片语法**：中英对照翻译时，原文的 `![alt](images/xxx)` 图片引用**必须原样保留在对应位置**，禁止替换为 `[IMG_PLACEHOLDER_N]` 或任何非标准占位符。`md_to_page.py` 依赖 `![](...)` 语法来拆分文本和图片段——占位符会导致图片语法无法被识别，被迫走 MCP 手动定位路径（index 不可靠），最终图片错位或缺失
+7. **🚨 全自动执行，禁止不必要的用户确认**：当首选方法（如 `md_to_page.py`）因缺少 LEXIANG_TOKEN 等原因不可用时，Agent 必须**自动切换到降级方案**（MCP Direct HTTP Call）并完成全部操作（包括图片上传），**禁止停下来问用户「是否要继续上传图片？」或「是否要我继续？」**。只有在所有方法都失败时才向用户报告错误。详见 Step 3「MCP 直接调用方法」章节
 
 ## 工作流程总览
 
@@ -230,12 +231,168 @@ Agent 执行：
 |------|------|
 | 微信公众号 | `file_create_hyperlink`（一步到位，后端自动抓图文） |
 | 有图片的文章（✅ 首选） | `scripts/md_to_page.py --parent-id <日期目录ID> --name "标题"`（需 LEXIANG_TOKEN，见下方获取方式） |
-| 有图片的文章（备选） | MCP connector "先全文后补图"（见 [lexiang-upload.md](references/lexiang-upload.md)，无需 TOKEN） |
+| 有图片的文章（🥈 **推荐降级** — 无 LEXIANG_TOKEN 时全自动执行，**无需用户确认**） | **MCP Direct HTTP Call**（直接 HTTP POST 到 LeXiang MCP 端点，详见下方「MCP 直接调用方法」） |
+| 有图片的文章（备选 — 通过 DeferExecuteTool 逐工具调用） | MCP connector "先全文后补图"（参数较小时可用，>10K 字符可能截断，见 [lexiang-upload.md](references/lexiang-upload.md)） |
 | 纯文本 ≤30K 字符 | `entry_import_content(parent_id, name, content, content_type="markdown")` |
-| **纯文本 >30K 字符（大文档）** | **`scripts/upload_doc_to_lexiang.py`**（见下方） |
+| **纯文本 >30K 字符（大文档）** | **`scripts/upload_doc_to_lexiang.py`** 或 **MCP Direct HTTP Call**（见下方） |
 | 视频/音频（仅上传文件） | `scripts/upload_video_via_openapi.py --media-type video/audio` |
 | **视频转录归档（文字稿+视频）** | 创建标题文件夹 → 文字稿上传为 file → 视频作为子文档（见 [youtube-video.md](references/youtube-video.md)） |
 | **播客转录归档（文字稿+音频）** | 创建标题文件夹 → 文字稿上传为 file → 音频作为子文档（见 [podcast-audio.md](references/podcast-audio.md)） |
+
+### 🚨 MCP 直接调用方法（L021 — 无 LEXIANG_TOKEN 时的首选降级方案）
+
+> **核心价值**：当 `md_to_page.py` 因缺少 LEXIANG_TOKEN 不可用时，本方法可**全自动完成图文上传**（创建页面→导入全文→逐张上传图片→插入 block→删除占位符），**无需任何用户确认或介入**。
+>
+> ⚠️ **🚨 禁止停下来问用户！** 当 md_to_page.py 不可用时，Agent 应直接使用本方法完成全部操作。只有在所有方法都失败时才向用户报告错误。
+
+**Token 获取**（WorkBuddy/Cursor 环境）：
+
+```bash
+# WorkBuddy：从 connector 配置中提取
+grep -r "connector.*lexiang" ~/.workbuddy/connectors/*/mcp.json | head -1
+# → 找到 mcp.json 路径后：
+python3 -c "import json; d=json.load(open('找到的mcp.json路径')); print(d['mcpServers']['connector:lexiang']['headers']['Authorization'])"
+
+# Cursor：从 MCP 配置中提取（格式可能含 Bearer 前缀）
+python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['mcpServers']['lexiang']['headers']['Authorization'].replace('Bearer ',''))"
+```
+
+**完整图文上传流程（Phase A → Phase B → Phase C）**：
+
+```
+═══ Phase A: 创建页面 + 导入全文 ═══
+
+A1. entry_create_entry(entry_type="page", parent_id=<日期目录ID>, name="标题")
+    → 获得 page_entry_id
+
+A2. 准备纯文字版 markdown：
+    - 读取 article_bilingual.md（中英对照版）
+    - 将 ![xxx](images/yyy) 替换为 [图片 N: yyy] 占位标记
+    - 得到 article_text_only.md
+
+A3. 通过 HTTP POST 调用 entry_import_content 导入全文：
+
+    Python 调用模板（可直接在 Bash 中执行）：
+    ┌──────────────────────────────────────────────────────┐
+    │ import json, urllib.request                            │
+    │                                                       │
+    │ TOKEN = "<从上面步骤获取的token>"                        │
+    │ COMPANY_FROM = "<config中的company_from>"               │
+    │ MCP_URL = f"https://mcp.lexiang-app.com/mcp?company_from={COMPANY_FROM}" │
+    │                                                       │
+    │ # 读取纯文字版内容                                      │
+    │ with open("article_text_only.md", "r") as f:           │
+    │     content = f.read()                                │
+    │                                                       │
+    │ mcp_request = {                                       │
+    │   "jsonrpc": "2.0", "id": 1,                          │
+    │   "method": "tools/call",                             │
+    │   "params": {                                         │
+    │     "name": "entry_import_content",                    │
+    │     "arguments": {                                    │
+    │       "parent_id": "<日期目录ID>",                      │
+    │       "name": "文档标题",                              │
+    │       "content": content,       # 完整内容，14K+ 可一次传入│
+    │       "content_type": "markdown",                      │
+    │       "space_id": "<SPACE_ID>"                         │
+    │     }                                                 │
+    │   }                                                   │
+    │ }                                                     │
+    │                                                       │
+    │ req = urllib.request.Request(                          │
+    │     MCP_URL,                                          │
+    │     data=json.dumps(mcp_request).encode("utf-8"),      │
+    │     headers={"Content-Type": "application/json",      │
+    │              "Authorization": TOKEN},                 │
+    │     method="POST"                                     │
+    │ )                                                     │
+    │ with urllib.request.urlopen(req, timeout=60) as resp:  │
+    │     result = json.loads(resp.read().decode())          │
+    │     # 解析响应：result['result']['content'][0]['text'] │
+    │     # 是 JSON 字符串，需二次 json.loads()                │
+    │     inner = json.loads(result['result']['content'][0]['text']) │
+    │     entry_id = inner['data']['entry']['id']            │
+    │     print(f"Page created: {entry_id}")                │
+    └──────────────────────────────────────────────────────┘
+
+═══ Phase B: 逐张上传图片并插入正确位置（从后往前！） ═══
+
+B1. 获取页面 block 结构：
+    调用 block_list_block_children(entry_id, with_descendants=False)
+    → 遍历 blocks，找到每个 [图片 N] 占位 block 的 index 和 block_id
+    → 记录: [(index_1, block_id_1, img_path_1), ..., (index_N, block_id_N, img_path_N)]
+
+B2. 对每张图片（从后往前处理！避免 index 偏移）：
+
+    对 i from len(images)-1 downto 0:
+    ├── b2a. file_apply_upload(
+    │        parent_entry_id=entry_id,
+    │        name="文件名.png",
+    │        size=str(文件字节数),     ← 必须是字符串！
+    │        mime_type="image/png|jpeg", ← 用 sips 检测实际格式
+    │        upload_type="PRE_SIGNED_URL"
+    │      )
+    │   → session_id + upload_url
+    │
+    ├── b2b. 上传到 COS（Python urllib.request，禁止用 curl！）：
+    │    with open(img_path, 'rb') as f:
+    │        img_data = f.read()
+    │    req = urllib.request.Request(upload_url,
+    │        data=img_data,
+    │        headers={'Content-Type': mime_type,
+    │                 'Content-Length': str(len(img_data))},
+    │        method='PUT')
+    │    with urllib.request.urlopen(req, timeout=60) as resp:
+    │        assert resp.status == 200
+    │
+    ├── b2c. file_commit_upload(session=session_id)
+    │   → 返回 entry.target_id (= file_id)
+    │
+    └── b2d. 在占位位置插入 image block：
+         block_create_block_descendant(
+           entry_id=entry_id,
+           index=str(占位block的index),   ← 必须是字符串！
+           descendant=[{
+             "block_id": f"temp_img_{i}",
+             "block_type": "image",
+             "image": {"session_id": session_id}
+           }]
+         )
+
+B3. 删除所有占位 block（从后往前删除！）：
+
+    for each placeholder_block_id (从后往前):
+        block_delete_block(block_id=placeholder_block_id, entry_id=entry_id)
+        🚨 必须传 entry_id 参数！
+
+═══ Phase C: 验证 ═══
+
+C1. block_list_block_children(entry_id)
+    → 统计 block_type=="image" 的数量 == 原图数量？
+C2. 检查无残留 [图片 N] 占位 text block？
+C3. 输出乐享链接 + 交付自检清单
+```
+
+**⚠️ 关键注意事项**：
+
+1. **不要停下来问用户！** 当 md_to_page.py 不可用时，直接执行上述流程，不要输出「是否要继续将图片上传到乐享？」之类的确认提示
+2. MCP JSON-RPC 响应需要二次解析：`json.loads(response['result']['content'][0]['text'])`
+3. `file_apply_upload` 的 `size` 必须是字符串 `"12345"` 不是整数
+4. `block_create_block_descendant` 的 `index` 必须是字符串 `"13"` 不是整数
+5. `block_delete_block` 必须传 `entry_id`
+6. COS 上传必须用 Python `urllib.request`（curl 会因 URL 特殊字符 %2F/%3B 等返回 403）
+7. 从后往前处理图片和删除占位符，避免 index 偏移
+8. 图片 MIME 类型必须匹配实际格式（`.png` 扩展名的文件可能是 JPEG，用 `sips -g format` 检测）
+
+**适用场景优先级总结**：
+
+```
+有图片文章的上传路径选择：
+┌─ md_to_page.py (LEXIANG_TOKEN 可用)          → 🥇 首选，一步到位
+├─ MCP Direct HTTP Call (本文档方法)            → 🥈 推荐降级，全自动
+├─ DeferExecuteTool + call_tool 包装器           → 🥉 备选，参数较小时可用
+└─ .md 文件上传 (最终降级)                       → 仅当前两者都失败时
+```
 
 **🚨 大文档上传策略（>30K字符）**：
 
@@ -280,10 +437,14 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 - 🚨 **沙箱权限与转录降级**：Whisper/torch/faster-whisper 等含 native 库的 Python 包在沙箱环境可能因 code signing 失败。**禁止静默降级**（如用 shownotes 代替逐字转录）！必须先向用户申请沙箱外执行权限（`dangerouslyDisableSandbox: true`），用户同意后再执行；仅当用户明确拒绝时才可降级处理
 - 🚨 **视频/音频上传**必须用 `upload_video_via_openapi.py`（走 VOD），不用 MCP 的 `file_apply_upload`
 - 🚨 **日期目录**必须先查再建，创建后必须用 `before` 置顶
-- 🚨 **图片处理**贯穿全流程，`entry_import_content` / `entry_import_content_to_entry` **不会上传任何图片**。在 content 中写 `![alt](url)` 或 `<image src="url"/>` 会产生**空图片 block**（有 image 标签但无 file_id，页面显示空白），而不是跳过图片。图片只能通过 `block_apply_block_attachment_upload` → `curl PUT` → `block_create_block_descendant(image.session_id)` 三步流程上传
-- 🚨 **`block_create_block_descendant` 的 index 参数**不等于 `block_list_block_children` 返回的直接子节点位置。API 使用包含嵌套子节点（quote/callout/toggle 等容器块的 children）的**扁平索引系统**。经验值：靠近页面顶部 offset 约 +1-2，页面中后部（Section 2-3）offset 约 +4-5。估算公式：直接子节点位置 + 前面所有嵌套子节点数量。**根本解法：用 `md_to_page.py` 自动处理图片位置，避免手动计算 index**
+- 🚨 **图片处理**贯穿全流程，`entry_import_content` / `entry_import_content_to_entry` **不会上传任何图片**。在 content 中写 `![alt](url)` 或 `<image src="url"/>` 会产生**空图片 block**（有 image 标签但无 file_id，页面显示空白），而不是跳过图片。图片只能通过三步流程上传：
+  - `file_apply_upload` → Python `urllib.request.PUT` 上传到 COS → `file_commit_upload` → `block_create_block_descendant(image.session_id)`
+  - ⚠️ COS 上传**必须用 Python `urllib.request`**，curl 会因 URL 特殊字符（%2F/%3B 等）返回 403
+- 🚨 **`block_create_block_descendant` 的 index 参数**不等于 `block_list_block_children` 返回的直接子节点位置。API 使用包含嵌套子节点（quote/callout/toggle 等容器块的 children）的**扁平索引系统**。经验值：靠近页面顶部 offset 约 +1-2，页面中后部（Section 2-3）offset 约 +4-5。估算公式：直接子节点位置 + 前面所有嵌套子节点数量。**根本解法：优先用 `md_to_page.py` 或 MCP Direct HTTP Call 自动处理图片位置，避免手动计算 index**
 - 🚨 **`after=""`** 是排末尾不是置顶，禁止使用
-- 🚨 **LEXIANG_TOKEN 有效期约 2 小时**，每次用 `md_to_page.py` 前先从 `~/.cursor/mcp.json` 读取最新 token（`python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['mcpServers']['lexiang']['headers']['Authorization'])"`)；token 失效时回退到 MCP connector 方式
+- 🚨 **LEXIANG_TOKEN 有效期约 2 小时**，每次用 `md_to_page.py` 前先从配置读取最新 token；token 失效或不可获取时，**自动切换到 MCP Direct HTTP Call 方法**（使用 WorkBuddy connector token，无需 LEXIANG_TOKEN），不要停下来问用户确认
+- 🚨 **MCP Direct HTTP Call 的参数类型约束**：`file_apply_upload` 的 size、`block_create_block_descendant` 的 index 必须是字符串（如 `"12345"`、`"13"`），传整数会被 API 拒绝；MCP JSON-RPC 响应需要二次解析（`result['result']['content'][0]['text']` 是 JSON 字符串）
+- 🚨 **全自动执行**：当首选方法不可用时，Agent 必须自动切换到降级方案完成全部操作（包括图片上传），**禁止输出任何需要用户确认才能继续的提示**（核心规则 #7）。只有在所有方法都失败时才报告错误
 
 ## Step 4：交付自检（🚨 每次任务结尾必做，不可跳过）
 

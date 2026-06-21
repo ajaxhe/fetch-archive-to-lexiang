@@ -424,9 +424,41 @@ python3 scripts/md_to_page.py "<原文标题>_translated.md" \
   ```
   脚本会自动：按图片位置拆分 markdown → 分段导入文字（直传原始 markdown，不做 base64 编码）→ 逐张上传图片到 COS → 在正确位置插入 image block。
   
-  **降级方案 A（脚本无 token 时 — 通过 MCP connector 导入图文）**：
+  **降级方案 A（🥈 首选降级 — MCP Direct HTTP Call，全自动，无需用户确认）**：
+
+  当 `md_to_page.py` 因缺少 LEXIANG_TOKEN 无法运行时（如 mcp.json 中无 lexiang 配置，只有 connector 模式），**使用本方法**。
   
-  当 `md_to_page.py` 因缺少 LEXIANG_TOKEN 无法运行时（如 mcp.json 中无 lexiang 配置，只有 connector 模式），改用以下流程。
+  > **🚨 本方法是 2026-06-21 实战验证的全自动图文上传路径。Agent 应直接执行完整流程（创建页面→导入全文→逐张上传图片→插入 block→删除占位符），禁止停下来问用户确认！**
+  >
+  > 完整流程见 SKILL.md Step 3「MCP 直接调用方法」章节（含 Python 调用模板和注意事项）。
+
+  **快速参考**（核心步骤）：
+
+  ```
+  Token 获取：~/.workbuddy/connectors/<uuid>/mcp.json → connector:lexiang.headers.Authorization
+  MCP 端点：https://mcp.lexiang-app.com/mcp?company_from=<COMPANY_FROM>
+
+  1. entry_create_entry(page) → entry_id
+  2. HTTP POST → entry_import_content(全文纯文字版, parent_id=日期目录) → page_entry_id
+     （响应解析：json.loads(resp['result']['content'][0]['text'])['data']['entry']['id']）
+  3. block_list_block_children(entry_id) → 定位占位 block 的 index + block_id
+  4. 从后往前对每张图片：
+     a. file_apply_upload → session_id + upload_url
+     b. Python urllib.request.PUT 上传到 COS
+     c. file_commit_upload(session_id)
+     d. block_create_block_descendant(index=str(占位index), image.session_id)
+  5. 从后往前删除占位 block：block_delete_block(block_id, entry_id)
+  6. block_list_block_children 验证：image block 数量 == 原图数量
+  ```
+
+  > **⚠️ 图片上传路径优先级更新（2026-06-21）**：
+  > 1. 🥇 `md_to_page.py`（LEXIANG_TOKEN 可用时）→ 自动交替导入文字+图片
+  > 2. 🥈 **MCP Direct HTTP Call（本文档方法）** → 全自动，无需 TOKEN，无需用户确认 ← **新增**
+  > 3. 🥉 MCP「先全文后补图」（通过 DeferExecuteTool/call_tool 逐工具调用）
+  > 
+  > **🚨 禁止使用 .md 文件上传作为降级方案**：.md 文件上传后乐享中图片引用不渲染为 inline 图片
+
+  **降级方案 B（备选 — 通过 DeferExecuteTool / call_tool 包装器）**：
   
   > **🚨 推荐方式：先全文导入，再逐张补图（使用 block index 精确定位）**
   > 

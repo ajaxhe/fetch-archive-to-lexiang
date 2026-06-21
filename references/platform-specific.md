@@ -62,6 +62,8 @@ python scripts/fetch_article.py fetch "https://www.dedao.cn/course/article?id=<I
 
 **已知限制**：
 - `fetch_article.py` 的通用内容提取逻辑对得到 DOM 结构匹配不佳，**抓取结果可能不完整**
+- **CDP 连接可能失败**（2026-06-20 验证）：`connect_over_cdp` 在某些 Chrome 版本（如 149.0.7827.116）上报 "Browser context management is not supported" 错误。此时 `fetch_article.py` 会自动回退到 Playwright Chromium + Cookie 注入模式，但该模式无法访问已登录的得到会话，提取内容会不完整（~3500 字符 vs 完整 ~6000+ 字符）
+- **WebFetch 降级方案**：当 CDP 失败且 fetch_article.py 回退模式提取不完整时，可直接用 `WebFetch` 工具获取部分文章文本（约 2500 字符），再手动组合 `article.md`（文本 + `![](images/xxx)` 图片引用）。虽然 WebFetch 也受 SPA 限制无法获取全文，但配合手动补全可作为最终兜底方案
 - 正确做法是通过 Playwright CDP 连接后，**手动指定 `.iget-articles` 选择器**提取正文：
 
 ```python
