@@ -11,26 +11,122 @@
 
 **情况1：乐享知识库中已有 PDF 条目**（如 `lexiangla.com/pages/xxx`）
 
+> 🥇 **首选：用乐享 AI 解析能力直接读取完整原文**（见下方「乐享内 PDF 翻译归档专用流程」）。
+> 一条命令即可拿到结构化 markdown 原文 + 图片清单 + 原文 PDF：
+>
+> ```bash
+> python3 scripts/lexiang_pdf_parse.py <entry_id> --download-pdf --out-dir <项目子目录>
+> ```
+
+如只需原始 PDF 文件（用于 pymupdf 提取图表）：
+
 ```python
-# 1. 从 URL 提取 entry_id
+# 1. 从 URL 提取 entry_id；entry.target_id 即 file_id
 entry = mcp.entry_describe_entry(entry_id="<entry_id>")
-file_id = entry.target_id  # PDF 的文件ID
-
-# 2. 获取下载链接（有效期 3600s）
-result = mcp.file_download_file(file_id=file_id, expire_seconds=3600)
-download_url = result.url
-
-# 3. 下载 PDF
-curl -L -o paper.pdf "<download_url>"
+file_id = entry.target_id
+# 2. 获取下载链接（有效期 3600s）→ 3. 下载
+download_url = mcp.file_download_file(file_id=file_id, expire_seconds=3600).url
+# curl -L -o paper.pdf "<download_url>"
 ```
 
-> ⚠️ 注意：`entry_describe_ai_parse_content` 对大型 PDF 会超过 80K 字符限制而报错，**不要用它获取 PDF 内容**，改用下载方式。
+> ✅ **`entry_describe_ai_parse_content` 是读取乐享内 PDF 原文的正确方式**（实测可返回 149K+ 字符，无 80K 限制）。
+> 它返回的 `data.content` 是带 `#` 标题层级的 markdown，并把每张图渲染为 `[IMAGE]…[/IMAGE]` 块（含图片标题、AI 生成的中文描述、`/assets/xxx` 链接）。
+> ⚠️ `/assets/xxx` 链接需浏览器 JWT 会话，**MCP token 无法下载**——图片仍须从原始 PDF 用 pymupdf 提取。
 
 **情况2：arXiv 等直链 PDF**
 
 ```bash
 curl -L -o paper.pdf "https://arxiv.org/pdf/2605.05538"
 ```
+
+---
+
+### 🌟 乐享内英文 PDF → 中英对照 → 转存回同目录（专用流程）
+
+> 适用：用户给出乐享 PDF 条目链接（`lexiangla.com/pages/xxx`），要求翻译为中英对照并转存。
+> **最关键的一步是拿到完整、丰富的原文解析内容**——解析不全后续全废。
+
+```
+任务进度清单：
+- [ ] 1. 解析读取：lexiang_pdf_parse.py 拿到 parsed_raw.md + images.json + meta.json + paper.pdf
+- [ ] 2. 图片甄别：从 images.json 区分「真数据图表」与「装饰元素」
+- [ ] 3. 图表裁剪：pymupdf 卡片检测裁剪真图表
+- [ ] 4. 清洗装配：清掉页眉页脚噪音 + 降级冗余标题（作者/重复子标签/纯数字）为加粗正文，按标题把图片插回对应位置
+- [ ] 5. 翻译：默认用当前模型逐块翻译（标题单行双语 `EN / 中文`）；仅用户要求+有 key 时才用 translate_gemini.py
+- [ ] 6. 转存：md_to_page.py 上传到 meta.parent_id（原 PDF 所在目录，不新建日期目录）
+```
+
+**Step 1 — 一条命令拿全原文解析**
+
+```bash
+python3 scripts/lexiang_pdf_parse.py <entry_id> --download-pdf --out-dir <项目子目录>
+```
+
+产出 `parsed_raw.md`（完整 markdown 原文）、`images.json`（每个 `[IMAGE]` 的 page/标题/描述/上下文）、`meta.json`（含 `parent_id` = 转存目标目录）、`paper.pdf`。
+
+**Step 2 — 甄别图片（🚨 解析器会过度识别装饰元素）**
+
+乐享解析把**所有**视觉元素都标成 `[IMAGE]`，其中混有：封面图案、作者头像、箭头/图标、纯数字高亮框（如孤立的 “73%” 色块）。这些的数据**已在正文文字里**，无需单独成图。只保留**真数据图表**（条形对比、分布图、信息图等）。判断依据：`images.json` 的 `title`/`desc` 是否描述了**多组可比数据**，以及对应 PDF 页面渲染后是否为独立图表卡片。
+
+**Step 3 — 用「卡片检测」裁剪真图表**（比逐张光栅/矢量提取更稳，因报告图表常由几十个碎片拼成）
+
+```python
+import fitz
+doc = fitz.open('paper.pdf')
+def crop_card(page, mat=fitz.Matrix(2.4, 2.4), pad=7):
+    W, H = page.rect.width, page.rect.height
+    best = None
+    for d in page.get_drawings():
+        r = d['rect']
+        if r.width <= 0 or r.height <= 0:
+            continue
+        af = (r.width * r.height) / (W * H)
+        # 卡片背景：占页 10%~78%、宽度过半的最大填充矩形（排除整页背景 af≈1.0）
+        if 0.10 < af < 0.78 and r.width > 0.5 * W and r.height > 0.10 * H:
+            if best is None or r.width * r.height > best.width * best.height:
+                best = r
+    if best:
+        clip = fitz.Rect(best.x0 - pad, best.y0 - pad, best.x1 + pad, best.y1 + pad)
+        return page.get_pixmap(matrix=mat, clip=clip)
+    return None
+```
+
+> ⚠️ 卡片检测对**纯文字卡片**（如附录的「How AI gets absorbed」段落、文字表格）也会命中——务必渲染成图后**目视核对**（拼成 contact sheet 一次看多张），只留真图表。封面/作者合影用固定区域裁剪。
+
+**Step 4 — 清洗 + 控制标题 + 按标题插图**
+
+- 删除运行页眉/页脚噪音（`Presented by…` / `Powered by glean` / `Work AI Institute` / `p. NN` / 重复副标题）和 `<!-- page-number -->` 注释。
+- **🚨 标题层级要克制（否则乐享目录极度膨胀）**：乐享按 `#` 标题生成目录。解析出的 markdown 往往把**作者名、人物叙事名、重复子标签（如各地区/职能/行业下的 The posture / How AI gets absorbed / What workers are doing / The tradeoff）、纯数字百分比**都标成了标题——这些**一律降级为加粗正文 `**...**`**。只保留真正的章节/小节标题，每个大章节在目录里**一行**即可。
+- **🚨 标题层级要重排（解析常把二/三级误标为一级）**：解析器给的 `#` 级别**不可信**——它经常把章节内的图表标题、小节都标成 `#`（一级），导致目录里几十个一级标题、层级全乱。务必**按文档真实逻辑重排**：①只让**正文真正的大章节**（对应目录页那几条 + 标题页/作者/目录）保持一级 `#`；②大章节内的图表/小节统一为二级 `##`；③附录里「地区/职能/行业」这类并列项是三级 `###`（其上的 Appendix A/B/C 为二级）。判定英文标题名时注意两类坑：中文译文以 `AI`/`UX` 等短词开头会污染「首个中文字符前取英文」的切法；而 `Government / public sector`、`Nonprofit / NGO` 这类名称**内部就含 ` / `**，不能当双语分隔符切断。
+- **🚨 目录页（Table of Contents）单独重建**：原文的目录常被解析成**表格**，再叠加双语翻译，导致每个章节拆成 3–4 行（Page/页码、英文标题、中文标题各占一格），极度冗余。**不要保留表格**，重建为「一章一行」的清单：`- **Section N / 第 N 部分**：English Title / 中文标题 · p.NN`。
+- **精确插图技巧**：这类报告每张图表都有一句标题，且**与正文某个 `#` 标题一字不差**。把图表标题作为关键字匹配正文标题行，在其后插入 `![双语图注](images/xxx.png)`——位置自然正确，无需手算 block index。
+- **🚨 表格翻译：中英同格 + 合并单元格用 HTML**：解析出的 markdown 表格有两个通病——①翻译时把中文**整行/整表另起**（一个英文行下面再来一个中文行，甚至整张表复制成中文表），目录/正文都很乱；②原文的合并单元格（rowspan/colspan）、统计卡片布局被拍平成普通网格，意思走样。**正确做法**：把每个表**重建为原生 HTML `<table>`**——文本单元格内 `English<br>中文` 同格双语（数据/百分比格不必翻译）；合并单元格用 `rowspan`/`colspan` 还原；统计卡片用 2×N 的 `<td>` 网格。乐享 `entry_import_content_to_entry` 的 **markdown 和 html 两种 content_type 都会把内嵌 `<table>` 透传渲染成表格块**（实测 `rowspan`/`colspan` 正确生效），所以直接把 HTML 表嵌在 markdown 正文里即可，无需切换 content_type。改完用 `block_convert_content_to_blocks`（纯转换、不落库）可先验证 `col_span`/`row_span` 是否正确。
+- 保留所有 `![](...)`（核心规则 #6）。
+
+**Step 5 — 翻译为中英对照**
+
+🥇 **默认：用当前运行 skill 的大模型（Agent 自己）逐块翻译**（长文按 3000–5000 字符分块），无外部依赖、质量可控。翻译时遵守：
+
+- **🚨 标题单行双语**：`## English Title / 中文标题`（同一行 ` / ` 分隔），**禁止**把中文标题另起一行——否则一个章节在目录里占两行，查看极不便。
+- 正文每段英文后紧跟中文译文（空行分隔）；保留所有 `![](...)`。
+
+🥈 **备选（仅用户明确要求且已提供 `GEMINI_API_KEY` 时）**：
+
+```bash
+python3 scripts/translate_gemini.py <清洗后.md> <中英对照.md>   # 保留 ![](...)；注意校验失败分块并补译
+```
+
+**Step 6 — 转存回原目录**
+
+用 `meta.json` 里的 `parent_id`（原 PDF 所在目录）作为上传目标，**不新建日期目录**：
+
+```bash
+python3 scripts/md_to_page.py <中英对照.md> --parent-id <meta.parent_id> --name "<标题> 中英对照"
+```
+
+无 LEXIANG_TOKEN 时按 SKILL.md「MCP 直接调用方法」全自动降级。
+
+---
 
 #### Step B：提取文字（pymupdf）
 

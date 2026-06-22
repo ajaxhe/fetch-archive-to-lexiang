@@ -29,6 +29,9 @@ requires:
    - **不可编辑文件**（视频、音频、PDF等）：上传后通过 `knowledge_tag_set_entry_tags` 或 `comment_list_comments` → 评论方式附上原文链接
 3. **乐享链接格式**：按步骤 0 读取的 `access_domain.page_url_template` 生成（禁止 `mcp.lexiang-app.com`，禁止硬编码 company_from）
 4. **非中文内容必须翻译**：中英对照格式（每段英文后紧跟中文翻译）
+   - **翻译执行方式**：🥇 **默认用当前运行 skill 的大模型（Agent 自己）逐块翻译**；🥈 仅当用户**明确要求**用 Gemini **且**已提供 `GEMINI_API_KEY` 时，才用 `scripts/translate_gemini.py`
+   - **🚨 标题必须单行双语**：`## English Title / 中文标题`（英文中文同一行用 ` / ` 分隔），**禁止把中文译文另起一行变成独立标题**——否则一个章节在目录里占两行，目录极不便查看
+   - **🚨 标题层级要克制，避免目录膨胀**：只给真正的章节/小节设标题。作者名、人物叙事名、重复的子标签（如「The posture / The tradeoff」）、纯数字/百分比等**一律用加粗正文**（`**...**`），不设标题；同一大章节的要点用一行列表表达，不要每条都拆成标题
 5. **图片不可丢失**：有图片的文章必须用 `fetch_article.py` 抓取 + `md_to_page.py` 导入（或 MCP Direct HTTP Call 降级方案）
 6. **🚨 翻译必须保留图片语法**：中英对照翻译时，原文的 `![alt](images/xxx)` 图片引用**必须原样保留在对应位置**，禁止替换为 `[IMG_PLACEHOLDER_N]` 或任何非标准占位符。`md_to_page.py` 依赖 `![](...)` 语法来拆分文本和图片段——占位符会导致图片语法无法被识别，被迫走 MCP 手动定位路径（index 不可靠），最终图片错位或缺失
 7. **🚨 全自动执行，禁止不必要的用户确认**：当首选方法（如 `md_to_page.py`）因缺少 LEXIANG_TOKEN 等原因不可用时，Agent 必须**自动切换到降级方案**（MCP Direct HTTP Call）并完成全部操作（包括图片上传），**禁止停下来问用户「是否要继续上传图片？」或「是否要我继续？」**。只有在所有方法都失败时才向用户报告错误。详见 Step 3「MCP 直接调用方法」章节
@@ -81,7 +84,8 @@ Step 5: 📝 自省（有问题则更新 lessons-learned.md）
 | 2 | YouTube 视频 | `scripts/yt_download_transcribe.py` | [youtube-video.md](references/youtube-video.md) |
 | 2b | 含嵌入视频/播客的文章（Substack/Newsletter 等） | 提取 YouTube 链接 → `yt_download_transcribe.py` | [youtube-video.md](references/youtube-video.md) |
 | 3 | 播客音频（小宇宙等）| `scripts/podcast_to_lexiang.py`（转录） + 标题文件夹归档 | [podcast-audio.md](references/podcast-audio.md) |
-| 4 | PDF 文件/链接 | pymupdf 提取+裁剪 | [pdf-processing.md](references/pdf-processing.md) |
+| 4 | **乐享内 PDF 条目**（`lexiangla.com/pages/xxx`，英文待翻译） | `scripts/lexiang_pdf_parse.py`（AI 解析拿全原文）→ 翻译 → 转存回**同目录** | [pdf-processing.md](references/pdf-processing.md)「乐享内英文 PDF」专用流程 |
+| 4b | PDF 直链/本地 PDF | pymupdf 提取+裁剪 | [pdf-processing.md](references/pdf-processing.md) |
 | 5 | 付费/登录墙文章 | `scripts/fetch_article.py`（Cookie/CDP） | 见下方 |
 | 6 | 免费图文文章 | `scripts/fetch_article.py` | 见下方 |
 | 7 | 得到 APP | `fetch_article.py --cdp` | [platform-specific.md](references/platform-specific.md) |
@@ -148,13 +152,19 @@ open -a "Google Chrome" --args \
 - ≥ 30% → 中文，跳过翻译
 - < 30% → 非中文，**必须翻译为中英对照格式**
 
-中英对照格式：每段先英文原文，紧跟中文翻译，标题用 `## English Title / 中文标题`。文档顶部格式为：
+**翻译执行方式**：🥇 默认用当前运行 skill 的大模型（Agent 自己）逐块翻译（长文按 3000–5000 字符分块）；🥈 仅当用户明确要求且提供 `GEMINI_API_KEY` 时才用 `scripts/translate_gemini.py`。
+
+中英对照格式：每段先英文原文，紧跟中文翻译。文档顶部格式为：
 ```
 # 文章标题 / 中文标题
 **原文链接**：[文章标题](原始URL)
 
 *By Author · Date · Platform*
 ```
+
+🚨 **标题规则（直接影响乐享目录质量）**：
+- **单行双语**：`## English Title / 中文标题`（同一行 ` / ` 分隔），**禁止**中文译文另起一行成为独立标题（否则目录里一个章节占两行）
+- **层级克制**：只给真正的章节/小节设标题；作者名、人物名、重复子标签、纯数字百分比等用加粗正文 `**...**`，不设标题，避免目录膨胀
 
 🚨 **图片语法保留规则（翻译时必须遵守）**：
 - 原文中的 `![alt](images/xxx)` 图片引用**必须原样保留**，不得替换为 `[IMG_PLACEHOLDER_N]` 或任何非标准格式
@@ -424,6 +434,7 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 
 | 脚本 | 用途 |
 |------|------|
+| `scripts/lexiang_pdf_parse.py` | **读取乐享内 PDF 原文**：调用 `entry_describe_ai_parse_content` 拿完整解析 markdown + 图片清单 + 元信息（含转存目标 `parent_id`），可选下载原 PDF |
 | `scripts/upload_doc_to_lexiang.py` | **通用大文档上传**：绕过 MCP 参数限制，支持在线文档/文件两种模式 |
 | `scripts/podcast_to_lexiang.py` | **播客全流程**：下载→FunASR转录→Markdown→上传（一键执行） |
 | `scripts/fetch_article.py` | 抓取文章（Cookie/CDP/Substack） |
