@@ -71,6 +71,44 @@
 - **关键发现**：乐享 `entry_import_content_to_entry` 的 **markdown 与 html 两种 content_type 都会透传内嵌 `<table>` 并渲染成真正的表格块**（实测 `col_span`/`row_span` 正确生效），所以 HTML 表直接嵌在 markdown 正文即可，不必切 content_type。可先用 `block_convert_content_to_blocks`（纯转换不落库）验证。
 - **同步更新**：pdf-processing.md 乐享流程 Step 4；本文件。
 
+#### L013: 名词定义用 callout 块 + 转存后局部修正走增量更新
+- **背景**：Work AI Index 转存后，用户反馈"加粗文本变成了标题""名词定义应该用乐享自带的 callout 块"，并强调"做增量更新，不要每次重刷所有内容（太费 token）"。
+- **问题1（术语成标题）**：`DEFINITION` + 术语 + 释义的"定义卡片"，解析把术语行（`Botsitting (n.)`）标成 `##` 标题，污染目录、丢卡片样式。
+- **问题2（该用 callout）**：定义/提示这类内容应该用乐享原生 `callout` 块，而不是普通段落或标题。
+- **正确做法**：用 `block_create_block_descendant` 建 `callout`（容器型，内容放 `children` 子 p 块；首行加粗术语 + 英文/中文释义；可设 `icon` 传 emoji 字符、`color` 默认 `#F2F8FE`），删掉原标题/标签块。markdown 无 callout 语法，全量导入只能退化成 `> quote`，故定义卡片优先用 block 工具单独建。
+- **问题3（最关键·省 token）**：上传后的小修小补**禁止重跑 `md_to_page.py` 全量覆盖**。正确流程：`block_list_block_children` 拉块定位 → `block_create_block_descendant`/`block_delete_block`/`block_update_block(s)` 精准增删改 → 本地 `.md` 同步。多处编辑**按文档顺序从后往前**做（删除按 block_id 与位置无关、插入按 index，从后往前可避免子索引位移）。
+- **同步更新**：pdf-processing.md 乐享流程 Step 4 + 新增 Step 7（增量更新）；本文件。
+
+#### L014: 清除 PDF 页眉残留重复行 + 章节序号 kicker 并入标题
+- **背景**：Work AI Index 转存后，用户发现 `SECTION 03` 成了标题上方的孤立短行（本应是标题的一部分），并要求把这类方案抽象进 skill 一步到位。
+- **问题1（页眉家具散落全文）**：PDF 每页的页眉/页脚（章节名、`SECTION 0X`、`第 X 节`、`Appendix A, Region`）被解析成独立短段落，**同一句重复出现十几到几十次**（本例全文 67 个噪音块，仅 "How to Break…" 就重复 25+ 次）。清洗环节漏掉，全飘在正文里。
+- **问题2（章节 kicker 丢失/错位）**：`SECTION 0X` 序号是标题的一部分，却被留成孤立短行，既丑又无意义。
+- **正确做法**：①清洗时统计**逐字重复 ≥3 次的短行**+章节标题/SECTION/第X节等模式行，判为页眉家具全部删除（注意别误删"英文段+中文段"的双语正文）；②章节序号折进该章节 H1，统一 `# SECTION 0X · English Title / 中文标题`。
+- **增量修复手法**：本例用 `block_update_blocks`（一次改 9 个 H1，上限 20）+ `block_delete_block_children`（`ids` 传 67 个块、`parent_block_id` 传根块，一次批删）两次调用搞定，远比重传 240KB 全文省 token。
+- **同步更新**：pdf-processing.md 乐享流程 Step 4；本文件。
+
+#### L015: 卡片/分项小标题要比父标题低一级
+- **背景**：用户反馈 `Botsitting by the numbers` 下的 `Feeding the AI context` 等几个标题应是它的子级，而非平级。
+- **根因**：解析把"某图表/分项标题 + 其下一组并列命名卡片"全标成同一级（都 `##`），层级关系丢失。
+- **正确做法**：父标题（含 "by the numbers / comes in N forms / 分 N 类"等信号）后紧跟的一组**结构对称、各带说明的命名小标题**是其子项，降一级（父 `##` → 子 `###`）。本例修了两组：`Botsitting by the numbers` 下 4 项、`Botshitting comes in three main forms` 下 3 项 Offloading。
+- **增量手法**：乐享 `block_update_block(s)` **不能改块类型**（h2↔h3），需**删除旧块 + 在原 index 重建为目标级**；多块时从后往前建（index 不位移）、最后 `block_delete_block_children` 批删旧块。
+- **同步更新**：pdf-processing.md 乐享流程 Step 4；本文件。
+
+#### L016: 统计高亮框（stat card）用 callout 块（📊）
+- **背景**：用户确认 PDF 左侧大数字 + 右侧说明句的统计高亮框应放入乐享 callout，并要求按此策略优化剩余内容。
+- **问题**：解析把 stat card 拆成 3–4 个孤立段落（数字行 + 英文 + 重复数字 + 中文），丢失 PDF 的视觉强调，与右侧原文差距大。
+- **正确做法**：合并为 1 个 `callout`（`icon: 📊` / emoji-id `1f4ca`），块内 `**数字**` 加粗 + 英文说明 + 中文说明。与定义 callout（📖）区分图标。
+- **本例**：共 14 个 stat callout（含此前 6.4、73% + 本次新增 12 个：35%、60%、1.3x、75%、63%、77%、30%、33%×2、32%、74%、28%）。
+- **增量手法**：`apply_stat_callouts.py` 从后往前 `block_create_block_descendant` + `block_delete_block_children` 批删旧块。
+- **同步更新**：pdf-processing.md Step 4；本文件。
+
+#### L017: 多列信息图用 HTML 表格 + 加粗（不设标题）
+- **背景**：用户反馈「Botshitting 三种形式」三列卡片被纵向堆叠、列内用了 `###` 标题，问是否可用 col/表格布局，且布局内不要设标题、高亮信息加粗即可。
+- **问题**：解析把 N 列并排信息图拆成纵向段落 + 每列 h3 标题 + 标签/引用多段拆分；还混入解析噪音（如 `$m \ge 3$`）和图表残留数字行。
+- **正确做法**：重建为 **1 行 N 列 HTML `<table>`**，`<td>` 内 `<strong>` 加粗列名/标签/百分比，**不设 `#` 标题**；中英同格 `<br>` 分隔。乐享 markdown/html 均透传 `<table>` 为表格块，`<strong>` 保留。`column_list` 也可用但表格更稳。
+- **增量手法**：批删旧块（42 个）→ `block_create_block_descendant` 插入表格（先用 `block_convert_content_to_blocks` 取每列 elements）。脚本：`apply_three_col_table.py`。
+- **同步更新**：pdf-processing.md Step 4；本文件。
+
 #### L009: 翻译默认用当前模型，Gemini 改为备选
 - **背景**：用户要求默认用运行 skill 的大模型翻译。
 - **正确做法**：🥇 默认 Agent（当前模型）逐块翻译；🥈 仅当用户**明确要求**用 Gemini **且**提供 `GEMINI_API_KEY` 时才用 `translate_gemini.py`。用 gemini 脚本时务必校验是否有分块翻译失败（脚本失败会静默保留英文原文），发现未翻译区段需补译。
@@ -109,6 +147,11 @@
 | 2026-06-22 | 用户反馈目录膨胀/标题双行/翻译方式 | 标题层级克制+单行双语（L008）；翻译默认当前模型、Gemini 转备选（L009） | SKILL.md, pdf-processing.md, lessons-learned.md, translate_gemini.py |
 | 2026-06-22 | 用户反馈标题层级混乱（二/三级标到一级） | 按文档逻辑重排标题层级 + 双语/含斜杠名称判定坑（L011） | pdf-processing.md, lessons-learned.md |
 | 2026-06-22 | 用户反馈表格中文另起行/合并单元格丢失 | 表格重建为 HTML（中英同格 + rowspan/colspan），实测 markdown/html 均透传（L012） | pdf-processing.md, lessons-learned.md |
+| 2026-06-23 | 用户反馈术语成标题/该用 callout/要增量更新 | 定义卡片用 callout 块；转存后小修用块工具增量增删改、勿重刷全文（L013） | pdf-processing.md（新增 Step 7）, lessons-learned.md |
+| 2026-06-23 | 用户反馈 SECTION kicker 成孤立行/要一步到位 | 清除页眉残留重复行 + 章节序号并入 H1；批量 update/delete 增量修复（L014） | pdf-processing.md, lessons-learned.md |
+| 2026-06-23 | 用户反馈卡片小标题与父标题平级 | 卡片/分项标题降一级嵌套；改类型需删除重建（L015） | pdf-processing.md, lessons-learned.md |
+| 2026-06-23 | 用户确认 stat 高亮框应放 callout | 统计卡片合并为 📊 callout 块；apply_stat_callouts.py 增量替换（L016） | pdf-processing.md, lessons-learned.md, apply_stat_callouts.py |
+| 2026-06-23 | 用户问多列信息图能否用 col/表格、布局内不加标题 | 多列卡片重建为 HTML 三列表格 + strong 加粗（L017） | pdf-processing.md, apply_three_col_table.py |
 | 2026-06-22 | 用户反馈目录页表格冗余 | 目录页单独重建为一行一章清单，保留正文数据表格（L010） | pdf-processing.md, lessons-learned.md |
 
 ---

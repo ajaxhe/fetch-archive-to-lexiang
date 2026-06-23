@@ -96,10 +96,18 @@ def crop_card(page, mat=fitz.Matrix(2.4, 2.4), pad=7):
 **Step 4 — 清洗 + 控制标题 + 按标题插图**
 
 - 删除运行页眉/页脚噪音（`Presented by…` / `Powered by glean` / `Work AI Institute` / `p. NN` / 重复副标题）和 `<!-- page-number -->` 注释。
+- **🚨 清除"页眉残留"重复行（一步到位的关键）**：PDF 每页的页眉/页脚（章节名、`SECTION 0X`、`第 X 节`、`Appendix A, Region` 等）会被解析成**散落全文的独立短段落**，同一句往往**重复出现十几到几十次**。识别与清除方法：①统计**逐字重复 ≥3 次的短行**（长度 < ~90、不含正文标点收尾）→ 判定为页眉家具，全部删除；②`SECTION\s*0?\d`、`第.节`、纯中/英章节标题、`English Title 中文`（标题+中文紧贴的组合页眉）这些模式行同样删除。注意**别误删正文**：双语正文段是"英文段 + 空行 + 中文段"的长文本，与短重复页眉行截然不同。
+- **🚨 章节序号 kicker 并入标题**：`SECTION 03` 这类章节序号是**标题的一部分**（原版是大标题上方的 kicker），解析却把它留成标题前的孤立短行。正确做法：把序号折进该章节 H1，统一成 `# SECTION 0X · English Title / 中文标题`，并删除原孤立的 `SECTION 0X` 行及其重复变体。
+- **🚨 卡片/分项小标题要降一级嵌套**：某个图表/统计/"分为 N 种"的标题下面，若紧跟一组**并列的命名卡片**（如 `Botsitting by the numbers` 下的 `Feeding the AI context / Supervising outputs / Debugging / Other botsitting`，或 `Botshitting comes in three main forms` 下的 `Offloading understanding / judgment / responsibility`），这些卡片是该标题的**子项**，必须比父标题**低一级**（父 `##` → 子 `###`），而不是平级。判断信号：父标题含 "by the numbers / comes in N forms / N 类/分项" 等，且其后是一串结构对称、各带一小段说明的命名小标题。
 - **🚨 标题层级要克制（否则乐享目录极度膨胀）**：乐享按 `#` 标题生成目录。解析出的 markdown 往往把**作者名、人物叙事名、重复子标签（如各地区/职能/行业下的 The posture / How AI gets absorbed / What workers are doing / The tradeoff）、纯数字百分比**都标成了标题——这些**一律降级为加粗正文 `**...**`**。只保留真正的章节/小节标题，每个大章节在目录里**一行**即可。
 - **🚨 标题层级要重排（解析常把二/三级误标为一级）**：解析器给的 `#` 级别**不可信**——它经常把章节内的图表标题、小节都标成 `#`（一级），导致目录里几十个一级标题、层级全乱。务必**按文档真实逻辑重排**：①只让**正文真正的大章节**（对应目录页那几条 + 标题页/作者/目录）保持一级 `#`；②大章节内的图表/小节统一为二级 `##`；③附录里「地区/职能/行业」这类并列项是三级 `###`（其上的 Appendix A/B/C 为二级）。判定英文标题名时注意两类坑：中文译文以 `AI`/`UX` 等短词开头会污染「首个中文字符前取英文」的切法；而 `Government / public sector`、`Nonprofit / NGO` 这类名称**内部就含 ` / `**，不能当双语分隔符切断。
 - **🚨 目录页（Table of Contents）单独重建**：原文的目录常被解析成**表格**，再叠加双语翻译，导致每个章节拆成 3–4 行（Page/页码、英文标题、中文标题各占一格），极度冗余。**不要保留表格**，重建为「一章一行」的清单：`- **Section N / 第 N 部分**：English Title / 中文标题 · p.NN`。
 - **精确插图技巧**：这类报告每张图表都有一句标题，且**与正文某个 `#` 标题一字不差**。把图表标题作为关键字匹配正文标题行，在其后插入 `![双语图注](images/xxx.png)`——位置自然正确，无需手算 block index。
+- **🚨 图表丢失排查链（常见双环节失败）**：乐享 AI 解析通常**能正确识别图表**（`[IMAGE]` 块含 OCR 数据，如 `Light 1-19% 35%`），但后续两个环节容易丢：①**pymupdf 人工筛选遗漏**——PDF 里 40+ 个 `[IMAGE]` 块，card detection 只精选 ~20 张，向量绘制的条形图（页面 `get_images()==0`）尤其容易被漏；②**`build_clean.py` 直接删除所有 `[IMAGE]` 块**——若 PNG 未提取，OCR 数据也一并丢弃。**修复/预防**：对每个 `[IMAGE]` 块检查是否已有对应 PNG；若无，从 PDF 按页裁剪（`get_pixmap(clip=...)`），其次 OCR→HTML 表格兜底。**裁剪注意**：PDF 页面宽约 1120pt，clip 右边界须到 `page.width - margin`（~1060），勿只裁到页面中线（~555）——否则条形图右侧百分比会被截掉。
+- **🚨 名词定义/术语卡片用 callout 块，别把术语设成标题**：报告里 `DEFINITION` + 术语 + 释义这类"定义卡片"，解析常把术语行（如 `Botsitting (n.)`）标成 `##` 标题——既污染目录，又丢了卡片样式。**正确做法**：用乐享原生 `callout` 块承载，块内首行用**加粗术语**、再跟英文/中文释义。callout 是容器型块，内容放在 `children`（子 p 块）里，可设 `icon`（传 emoji 字符，如 📖，服务端会转成 emoji-id）和 `color`（默认 `#F2F8FE` 浅蓝）。增量创建示例见下方"增量更新"。markdown 没有 callout 语法，全量导入时只能退化成 `> blockquote`（渲染为 quote 块），所以**定义卡片优先用 block 工具单独建 callout**。
+- **🚨 统计高亮框（stat card）也用 callout 块（📊 图标）**：PDF 里左侧大数字 + 右侧说明句的**统计高亮框**（如 `6.4 hrs/week`、`73%`、`35%`、`60%`、`75%/63%/77%/30%` 等）解析后常变成「数字一行 + 英文一行 + 重复数字 + 中文一行」的 3–4 个孤立段落，既丢视觉强调又占目录。**正确做法**：合并为 1 个 `callout`（`icon: 📊`），块内 `**数字**` 加粗首行 + 英文说明 + 中文说明。识别信号：短行以 `%`/`hrs`/`x`/`倍` 开头或整行 ≤40 字符且紧跟 ≥20 字符的说明句；同一数字重复出现 2 次（EN/CN 各一行）是典型模式。本地 md 用 `> **📊 …**` 引用块近似表示；线上用 `block_create_block_descendant` 增量替换（从后往前建、批删旧块）。脚本参考：`work-ai-index/apply_stat_callouts.py`。
+- **🚨 多列信息图用 HTML 三列表格（不加标题，高亮加粗）**：PDF 里并排 N 列的**卡片式信息图**（如「Botshitting 三种形式」各列含 Sounds like / What workers do + 百分比）解析后变成纵向堆叠 + 每列设 `###` 标题 + 标签/引用拆成多段。**正确做法**：重建为 **1 行 N 列的 HTML `<table>`**（`<td>` 内用 `<strong>` 加粗列标题/标签/百分比，**不设 `#` 标题**）；中英同格用 `<br>` 分隔。乐享会把内嵌 `<table>` 渲染成真正的表格块（实测 1×3 列、`<strong>` 保留）。复杂多列优先用表格而非 `column_list`（表格更稳、markdown/html 均透传）。脚本参考：`apply_three_col_table.py`。
+- **🚨 统计高亮卡片（Stat Card）也用 callout 块**：PDF 里左侧大数字 + 右侧说明句的统计卡片（如 `6.4 hrs/week`、`73%`、`35%`、`60%`），解析后常变成"加粗数字行 + 英文段 + 中文段"三行平铺，甚至数字重复两行（EN/CN 各一行 `73%`）。**正确做法**：合并为一个 `callout` 块（图标 📊），结构为：首行加粗数字/单位（`6.4 hrs/week / 6.4 小时/周` 或 `73%`）→ 英文说明 → 中文说明；**数字只出现一次**，不要 EN/CN 各一行。注意：callout 无法还原 PDF 左侧渐变数字方块，但能实现"高亮卡片"语义；markdown `> blockquote` 会渲染成 quote 而非 callout，需用 `block_create_block_descendant` 建 `block_type: callout`。
 - **🚨 表格翻译：中英同格 + 合并单元格用 HTML**：解析出的 markdown 表格有两个通病——①翻译时把中文**整行/整表另起**（一个英文行下面再来一个中文行，甚至整张表复制成中文表），目录/正文都很乱；②原文的合并单元格（rowspan/colspan）、统计卡片布局被拍平成普通网格，意思走样。**正确做法**：把每个表**重建为原生 HTML `<table>`**——文本单元格内 `English<br>中文` 同格双语（数据/百分比格不必翻译）；合并单元格用 `rowspan`/`colspan` 还原；统计卡片用 2×N 的 `<td>` 网格。乐享 `entry_import_content_to_entry` 的 **markdown 和 html 两种 content_type 都会把内嵌 `<table>` 透传渲染成表格块**（实测 `rowspan`/`colspan` 正确生效），所以直接把 HTML 表嵌在 markdown 正文里即可，无需切换 content_type。改完用 `block_convert_content_to_blocks`（纯转换、不落库）可先验证 `col_span`/`row_span` 是否正确。
 - 保留所有 `![](...)`（核心规则 #6）。
 
@@ -125,6 +133,19 @@ python3 scripts/md_to_page.py <中英对照.md> --parent-id <meta.parent_id> --n
 ```
 
 无 LEXIANG_TOKEN 时按 SKILL.md「MCP 直接调用方法」全自动降级。
+
+**Step 7 — 转存后的局部修正：用块工具做增量更新（别重刷全文）**
+
+文档已上传后，若用户只是反馈个别问题（某些标题层级、某段加粗误成标题、某处要换成 callout/表格等），**不要重新 `md_to_page.py` 全量覆盖**——那会重传几十上百个块、极费 token。改用块级 MCP 工具精准改：
+
+1. `block_list_block_children`（`limit` 设大、`_mcp_fields:"-staffs"` 减负）拉取当前块，按 `parent_id == 根块` 过滤出顶层块、按返回顺序即文档顺序，定位目标块的 `block_id` 与其**子索引**（用于 `index` 定位插入点）。
+2. 新建：`block_create_block_descendant`（`index` 是子块位置；无 `after_block_id`）。容器块（callout/table）把内容放进 `children`+`descendant`，用临时 block_id 表达父子关系。
+3. 删除：`block_delete_block`（按 `block_id`，会连带删子孙）。
+4. 改文本：`block_update_block` / 批量 `block_update_blocks`。
+5. **多处编辑按文档顺序从后往前做**：先改靠后的块，靠前块的子索引就不会被位移影响。删除按 `block_id`（与位置无关），插入按 `index`。
+6. 改完同步把本地 `.md` 也改一份，保持源文件与线上一致（callout 在 md 里用 `> blockquote` 近似表示）。
+
+callout 增量创建示例（定义卡片）：`block_create_block_descendant` 传 `descendant=[{block_id:"c",block_type:"callout",callout:{icon:"📖"},children:["t","e","n"]}, {block_id:"t",block_type:"p",text:{elements:[{text_run:{content:"术语",text_style:{bold:true}}}]}}, …英文p…, …中文p…]`，`children=["c"]`，`index="<目标子索引>"`。
 
 ---
 
