@@ -17,7 +17,7 @@
 | 🎬 **YouTube 视频** | YouTube、Substack/Newsletter 嵌入视频 | yt-dlp 下载 → Whisper 转录 → AI 翻译（中英对照）→ 标题文件夹归档 |
 | 🎙️ **播客音频** | 小宇宙FM、Apple Podcasts 等 | yt-dlp 下载音频 → FunASR/Whisper 转录 → 标题文件夹归档 |
 | 📄 **免费文章** | 任意公开网页 | web_fetch / Playwright → Markdown → 上传乐享 |
-| 📑 **PDF 文件/论文** | arXiv、乐享知识库已存 PDF、本地文件等 | pymupdf 提取文字 + 精确裁剪图形 → 非中文自动翻译为中英对照 → 上传乐享 |
+| 📑 **PDF 文件/论文** | arXiv、乐享知识库已存 PDF、本地文件等 | 组合 **`pdf-rich-translate`** skill 做提取/裁剪/翻译/富元素标注 → 本 skill 归档（导入 + 标注渲染成 callout/表格块） |
 
 ### 乐享知识库归档
 
@@ -42,11 +42,12 @@
         └── 音频.m4a（audio entry）            ← 原始音频（VOD路径上传）
 ```
 
-### PDF 处理特性
+### PDF 处理（已拆分为独立 skill）
 
-- **自动语言检测**：中文字符占比 ≥ 30% 则直接归档；否则自动翻译为**中英对照**格式
-- **精确图形提取**：区分光栅图（`get_image_rects`）和矢量图（`get_drawings`），精确裁剪图形区域（3x 高清），不截整页
-- **图片正确定位**：各图插入论文对应章节位置，caption 格式为 `Figure N: English / 图N：中文`（英中同一行）
+PDF 的「图文提取 + 富元素识别 + 中英对照翻译 + 可移植排版」已抽离为独立 skill **`pdf-rich-translate`**（项目 `.cursor/skills/`）。两者**组合使用**：
+
+- `pdf-rich-translate`：PDF → 可移植双语 markdown 包（正文 + `images/` + `> [!stat]`/`> [!definition]` 标注 + HTML 表）。
+- 本 skill（归档侧）：导入乐享、三步传图、把标注渲染成 callout/原生表格块、转存后增量改块、md↔线上对账。详见 [references/pdf-processing.md](references/pdf-processing.md)。
 
 ## 文件结构
 
@@ -68,8 +69,8 @@ fetch-archive-to-lexiang/
 │   ├── lexiang-upload.md         # 乐享上传详细步骤和降级方案
 │   ├── youtube-video.md          # YouTube/嵌入视频处理流程
 │   ├── podcast-audio.md          # 播客音频处理流程
-│   ├── pdf-processing.md         # PDF 文件处理
-│   ├── platform-specific.md      # 微信公众号/得到/SPA等特定平台
+│   ├── pdf-processing.md         # PDF 归档侧（提取/翻译见 pdf-rich-translate skill）
+│   ├── platform-specific.md      # 微信/得到/SPA/Substack/X/微博等特定平台
 │   ├── tips-experience.md        # 经验总结
 │   └── troubleshooting.md        # 常见问题排查
 └── tests/                        # 回归测试用例

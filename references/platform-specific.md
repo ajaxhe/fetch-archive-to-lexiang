@@ -260,6 +260,53 @@ await page.pdf({
 | `help.getguru.com` | readme.io | 移除 `.rm-Sidebar` + `nav` + `header` + `footer` |
 | `dedao.cn` | React SPA | CDP 模式 + `.iget-articles` 专用选择器 |
 
+### Substack 站点（如 lennysnewsletter.com）
+
+`fetch_article.py` 对 Substack 托管站（`*.substack.com`、`lennysnewsletter.com` 等）有**登录态缓存**：
+1. 登录成功后保存 Playwright `storage_state` 到 `~/.substack/storage_state.json`，后续直接复用，**无需重复登录/邮箱验证**。
+2. 优先级：缓存 `storage_state` > Chrome cookies > 引导登录。
+3. 加载后检查右上角头像（已登录）还是 "Sign in"（未登录）；已登录直接抓全文并刷新缓存；过期则清理重登。
+
+```bash
+python scripts/fetch_article.py login   # 推荐首次先单独登录并缓存，后续自动复用
+```
+
+**付费墙检测信号**：DOM `[data-testid="paywall"]`/`.paywall`；文本 `This post is for paid subscribers`/`Subscribe to read`/`Upgrade to paid`。不同站点结构不同，抓取不全时检查实际付费墙标识并更新检测逻辑。
+
+### X.com / Twitter 帖子（必须 CDP）
+
+X.com 是登录墙典型，`web_fetch` 与普通 Cookie 注入都不行，**必须 CDP**：
+
+```bash
+python scripts/fetch_article.py fetch "https://x.com/<user>/status/<id>" --output-dir <目录> --cdp
+```
+
+CDP 通过 Chrome DevTools Protocol(9222) 复用真实 Chrome 已登录会话，绕过 X 对自动化浏览器的检测。帖子转 Markdown、媒体下载到 `images/`、链接转 md 链接、转赞数等元信息保留。
+
+### 微博帖子（必须 CDP）
+
+微博强制登录（PC/移动/API 端口均是），`web_fetch` 和普通 Playwright 都会被重定向到 `Sina Visitor System`。**必须 CDP**：
+
+```bash
+python scripts/fetch_article.py fetch "https://weibo.com/<uid>/<mid>" --output-dir <目录> --cdp
+```
+
+| 坑 | 说明 |
+|---|---|
+| `web_fetch` 失败 | 被重定向到 `passport.weibo.com/visitor/visitor` |
+| Playwright 失败 | 检测 HeadlessChrome UA，`--browser=chrome` 也被拦 |
+| 内容整理 | 原始 HTML 含导航/按钮噪音，需清理为结构化 markdown |
+| 标题 | 默认「微博正文 - 微博」，转存改为 `<作者>：<主题关键词>`（如 `唐杰THU：最近的一些想法`） |
+| 图片 | `sinaimg.cn` CDN，部分需 Referer |
+
+转存用 `entry_import_content` 创建 page（**非** `file_create_hyperlink`，后者仅微信链接可用）。
+
+### web_fetch 获取的免费文章
+
+通过 `web_fetch` 拿到完整内容的免费文章，**同样保存原文全文**（不总结/不摘要/不改写）：文件名用原文标题，手动构建 `<标题>_meta.json`（URL/标题/作者/日期），有图尽量下载到 `images/`。
+
+> ⚠️ `web_fetch` 可能返回**总结版**而非全文。若内容明显被缩写（缺段落/引用/细节），调用时明确要求「返回完整原始全文，不要总结或缩写」。保存的必须是原文全文。
+
 ### Python 兼容性
 
 脚本使用 `from __future__ import annotations` 以兼容 Python 3.9（`str | None` 联合类型语法在 3.9 中不可用）。

@@ -21,7 +21,7 @@
 | md_to_page.py 导入后文字显示为 base64 乱码 | 脚本通过 HTTP JSON-RPC 直连乐享 MCP API 时，对 content 做了多余的 base64 编码。乐享 MCP 的 base64 要求仅针对 IDE 侧 MCP 协议 | 已修复：去掉 `import_content` 函数中的 `base64.b64encode()`，直传原始 markdown。⚠️ 通过 HTTP JSON-RPC 直连时**永远不要做 base64 编码** |
 | md_to_page.py 批量插入图片 block 失败 | `block_create_block_descendant` 一次传多张图片的 descendant 数组会超时或报错 | 改为逐张插入，每次只传一个 image block 的 descendant + children |
 | Gemini API 调用报 404 模型不存在 | `gemini-2.0-flash` 模型已下线 | 使用 `gemini-2.5-flash` 替代。可通过 `curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"` 查看当前可用模型 |
-| 英文文章未翻译就归档 | 跳过了步骤 3.5 的语言检测和翻译 | **所有英文文章必须翻译为中英对照后再归档**，这是强制步骤不可跳过。使用 `translate_gemini.py`（Gemini API）或 `translate_article.py`（OpenAI API）翻译，翻译完用 `md_to_page.py --entry-id` 覆盖更新 |
+| 英文文章未翻译就归档 | 跳过了步骤 3.5 的语言检测和翻译 | **所有英文文章必须翻译为中英对照后再归档**，这是强制步骤不可跳过。🥇 默认用当前模型逐块翻译；🥈 仅用户明确要求且有 `GEMINI_API_KEY` 时用 `translate_gemini.py`。翻译完用 `md_to_page.py --entry-id` 覆盖更新 |
 | `translate_gemini.py` 报错 FileNotFoundError | 脚本硬编码了源文件路径，不读取命令行参数 | 已修复：改用 `sys.argv[1]` 读取输入文件，`sys.argv[2]` 读取输出文件，默认输出 `_translated.md` |
 | `md_to_page.py` 执行报错 IndentationError | 添加 `--evaluation`/`--evaluation-file` 参数时缩进不一致 | 已修复：参数定义须与上方 `--base-url` 对齐；Python 严禁混用 tab 和空格 |
 | `fetch_article.py` 下载的图片在 `md_to_page.py` 中提示 NOT FOUND | 下载保存的文件名与写入 Markdown 的引用不一致（如 `img_06_1c1cfc4c.gif` vs `img_06_1c1cfc42.gif`）| `fetch_article.py` 的 `process_images` 函数中，保存到 `images/` 的文件名与替换 Markdown `src` 时的文件名必须完全一致；建议统一使用 `hash[:8]` + 原始扩展名，并在替换后打印映射表方便排查 |

@@ -317,11 +317,11 @@ Original second paragraph text...
 1. **🥇 Agent（当前运行的模型）直接翻译**（**默认方式**，无需任何 API Key）：由 Agent 在对话中逐段翻译全文，生成 `<原文标题>_translated.md`。这是最可靠的方式，因为 Agent 本身就是 LLM，翻译质量有保障且无外部依赖。
    - **长文翻译策略**（>5000 字符）：将原文按段落或 `---` 分隔符拆分为 3000-5000 字符的块，逐块翻译后拼接。每块翻译完成后立即写入文件（追加模式），避免丢失进度。
    - **短文翻译**（≤5000 字符）：一次性翻译整篇文章。
-2. **translate_article.py 脚本**（如果 `OPENAI_API_KEY` 可用）：
+2. **translate_gemini.py 脚本**（仅当用户**明确要求**且 `GEMINI_API_KEY` 可用）：
    ```bash
-   python3 scripts/translate_article.py "<原文标题>.md" "<原文标题>_translated.md" --model gpt-4o-mini
+   python3 scripts/translate_gemini.py "<原文标题>.md" "<原文标题>_translated.md"
    ```
-3. **translate_gemini.py 脚本**（如果 `GEMINI_API_KEY` 可用）
+   ⚠️ 分块失败会静默保留英文，译后须搜整段未翻译的英文并补译。
 
 **翻译完成后**：
 - 本地保存两个文件：`<原文标题>.md`（原文）和 `<原文标题>_translated.md`（中英对照版）
