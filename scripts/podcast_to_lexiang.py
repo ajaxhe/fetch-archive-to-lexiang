@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""播客音频全流程处理脚本：下载 → ASR转录 → 生成Markdown → 上传乐享知识库。
+"""播客音频全流程处理脚本：抓取 Show Notes → 下载 → ASR转录 → 生成Markdown → 上传乐享知识库。
 
 核心设计原则：
 - 所有操作固化在脚本中，Agent 只需准备 JSON 配置文件 + 一行命令调用
@@ -41,13 +41,167 @@
 from __future__ import annotations
 
 import argparse
+import html as html_module
 import json
 import os
 import re
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
+
+
+# 节目级 boilerplate，shownotes 中截断点（保留介绍 + 本期剧透，去掉重复 footer）
+_SHOWNOTES_CUT_MARKERS = (
+    "听友来信", "收听渠道", "新节目指路", "关于我们",
+    "展开Show Notes", "打开小宇宙查看更多精彩评论",
+)
+_SHOWNOTES_SECTION_HEADERS = ("本期剧透", "时间线", "章节", "Shownotes", "Show Notes")
+
+
+# ============================================================
+# 0. 抓取 Show Notes / 元信息
+# ============================================================
+def _http_get(url: str, timeout: int = 30) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def fetch_xiaoyuzhou_metadata(url: str) -> dict:
+    """从小宇宙 episode 页 __NEXT_DATA__ 提取 shownotes 与元信息。"""
+    page = _http_get(url)
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.DOTALL)
+    if not m:
+        return {}
+    data = json.loads(m.group(1))
+    ep = data.get("props", {}).get("pageProps", {}).get("episode") or {}
+    if not ep:
+        return {}
+
+    pod = ep.get("podcast") or {}
+    duration_sec = ep.get("duration") or 0
+    pub = (ep.get("pubDate") or "")[:10]
+    shownotes = (ep.get("description") or "").strip()
+    if not shownotes and ep.get("shownotes"):
+        shownotes = html_module.unescape(re.sub(r"<[^>]+>", "\n", ep["shownotes"]))
+        shownotes = re.sub(r"\n{3,}", "\n\n", shownotes).strip()
+
+    return {
+        "title": ep.get("title"),
+        "show_name": pod.get("title"),
+        "shownotes": shownotes,
+        "description": shownotes,
+        "date": pub,
+        "duration": f"{duration_sec // 60}分钟" if duration_sec else "",
+        "platform": "小宇宙FM",
+        "url": url,
+    }
+
+
+def fetch_ytdlp_metadata(url: str) -> dict:
+    """yt-dlp JSON 作为通用 fallback（description 常为节目级简介，信息量有限）。"""
+    cmd = ["yt-dlp", "--dump-json", "--no-download", url]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        return {}
+    try:
+        info = json.loads(result.stdout.strip().split("\n")[0])
+    except (json.JSONDecodeError, IndexError):
+        return {}
+
+    desc = (info.get("description") or "").strip()
+    upload_date = info.get("upload_date") or ""
+    if len(upload_date) == 8:
+        upload_date = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:8]}"
+
+    duration = info.get("duration") or 0
+    return {
+        "title": info.get("title") or info.get("fulltitle"),
+        "show_name": info.get("uploader") or info.get("channel"),
+        "shownotes": desc,
+        "description": desc,
+        "date": upload_date,
+        "duration": f"{duration // 60}分钟" if duration else "",
+        "platform": info.get("extractor_key", ""),
+        "url": info.get("webpage_url") or url,
+    }
+
+
+def fetch_episode_metadata(url: str) -> dict:
+    """按平台抓取 episode 元信息与 shownotes。"""
+    if "xiaoyuzhoufm.com" in url:
+        meta = fetch_xiaoyuzhou_metadata(url)
+        if meta.get("shownotes"):
+            return meta
+    return fetch_ytdlp_metadata(url)
+
+
+def merge_metadata(base: dict, fetched: dict) -> dict:
+    """页面抓取结果填空白；metadata.json / Agent 手工字段优先。"""
+    merged = dict(fetched)
+    merged.update({k: v for k, v in base.items() if v not in (None, "", [], {})})
+    if not merged.get("shownotes") and base.get("description"):
+        merged["shownotes"] = base["description"]
+    elif not merged.get("shownotes") and fetched.get("description"):
+        merged["shownotes"] = fetched["description"]
+    return merged
+
+
+def trim_shownotes_boilerplate(text: str) -> str:
+    """去掉节目级 footer（听友来信、关于我们等），保留介绍与本期剧透。"""
+    if not text:
+        return ""
+    cut_at = len(text)
+    for marker in _SHOWNOTES_CUT_MARKERS:
+        idx = text.find(marker)
+        if 0 < idx < cut_at:
+            cut_at = idx
+    return text[:cut_at].strip()
+
+
+def parse_time_to_seconds(time_str: str) -> int:
+    parts = time_str.strip().split(":")
+    parts = [int(p) for p in parts]
+    if len(parts) == 2:
+        return parts[0] * 60 + parts[1]
+    if len(parts) == 3:
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    return 0
+
+
+def extract_chapters_from_shownotes(text: str) -> list[tuple[int, str]]:
+    """从 shownotes 时间线提取章节，如「1、09:36 标题」。"""
+    chapters: list[tuple[int, str]] = []
+    for line in text.split("\n"):
+        line = line.strip()
+        m = re.match(
+            r"^\d+[、.]?\s*(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+)$",
+            line,
+        )
+        if m:
+            chapters.append((parse_time_to_seconds(m.group(1)), m.group(2).strip()))
+    return chapters
+
+
+def format_shownotes_markdown(shownotes: str) -> str:
+    """将 shownotes 格式化为「节目介绍」区块（位于逐字稿之前）。"""
+    text = trim_shownotes_boilerplate(shownotes)
+    if not text:
+        return ""
+
+    lines = ["## 节目介绍", ""]
+    for para in text.split("\n"):
+        para = para.strip()
+        if not para:
+            continue
+        if para in _SHOWNOTES_SECTION_HEADERS:
+            lines.extend(["", f"### {para}", ""])
+        else:
+            lines.extend([para, ""])
+
+    return "\n".join(lines).strip()
 
 
 # ============================================================
@@ -267,7 +421,7 @@ def split_by_punctuation(text: str, timestamps: list[list[int]]) -> list[dict]:
 # ============================================================
 def generate_markdown(segments: list[dict], title: str, metadata: dict,
                       chapters: list[tuple[int, str]] | None = None, language: str = "zh") -> str:
-    """将分段结果生成带章节和时间戳的 Markdown。"""
+    """将分段结果生成带 shownotes、章节和时间戳的 Markdown。"""
     print(f"\n{'='*60}")
     print(f"[4/5] 生成 Markdown 文字稿")
     print(f"{'='*60}", flush=True)
@@ -300,6 +454,15 @@ def generate_markdown(segments: list[dict], title: str, metadata: dict,
         lines.append(f"> 原始链接：{metadata['url']}")
     lines.append(f"> 转录工具：FunASR (Paraformer + CT-Punc) | 标点自动恢复\n")
     lines.append("---\n")
+
+    shownotes = metadata.get("shownotes") or metadata.get("description") or ""
+    shownotes_md = format_shownotes_markdown(shownotes)
+    if shownotes_md:
+        lines.append(shownotes_md)
+        lines.append("\n---\n")
+        print(f"📌 已插入节目介绍 ({len(trim_shownotes_boilerplate(shownotes))} 字符)")
+
+    lines.append("## 逐字稿\n")
 
     # 插入章节标题
     if chapters:
@@ -450,6 +613,8 @@ def main():
     parser.add_argument("--chapters-json", help="章节时间线 JSON")
     parser.add_argument("--hotwords", help="热词文件或字符串")
     parser.add_argument("--hotwords-json", help="热词 JSON")
+    parser.add_argument("--shownotes-json", help="Show Notes JSON（含 shownotes 字段）或纯文本 .md")
+    parser.add_argument("--skip-shownotes-fetch", action="store_true", help="跳过自动抓取 shownotes")
     parser.add_argument("--chunk-seconds", type=int, default=600, help="切片时长(秒)")
 
     args = parser.parse_args()
@@ -462,10 +627,35 @@ def main():
         with open(args.metadata_json) as f:
             metadata = json.load(f)
 
+    if args.shownotes_json and Path(args.shownotes_json).exists():
+        p = Path(args.shownotes_json)
+        if p.suffix == ".json":
+            with open(p) as f:
+                sn = json.load(f)
+            metadata["shownotes"] = sn.get("shownotes") or sn.get("description") or ""
+        else:
+            metadata["shownotes"] = p.read_text(encoding="utf-8")
+
+    # 自动抓取 shownotes（小宇宙等平台信息量远高于 yt-dlp description）
+    if not args.skip_shownotes_fetch and not metadata.get("shownotes"):
+        print(f"\n{'='*60}")
+        print(f"[0/5] 抓取 Show Notes")
+        print(f"{'='*60}", flush=True)
+        fetched = fetch_episode_metadata(args.url)
+        metadata = merge_metadata(metadata, fetched)
+        if metadata.get("shownotes"):
+            print(f"✅ Show Notes: {len(metadata['shownotes'])} 字符")
+        else:
+            print("⚠️ 未获取到 Show Notes，将仅输出逐字稿")
+
     chapters = None
     if args.chapters_json and Path(args.chapters_json).exists():
         with open(args.chapters_json) as f:
             chapters = [(c["time"], c["title"]) for c in json.load(f)]
+    elif metadata.get("shownotes"):
+        chapters = extract_chapters_from_shownotes(metadata["shownotes"])
+        if chapters:
+            print(f"📌 从 Show Notes 提取 {len(chapters)} 个章节时间点")
 
     title = args.title or metadata.get("title", "播客转录")
     hotwords = build_hotwords(args, metadata, chapters)

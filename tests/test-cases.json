@@ -96,8 +96,8 @@
       "duration_min": 139
     },
     "steps": [
-      "WebFetch 提取播客元信息",
-      "准备 metadata.json + chapters.json + hotwords.json",
+      "WebFetch 提取播客元信息 + Show Notes",
+      "准备 metadata.json（含 shownotes）+ chapters.json + hotwords.json",
       "podcast_to_lexiang.py 后台转录（FunASR）",
       "乐享：创建日期目录 → 创建标题文件夹 → 上传文字稿(.md) → 上传音频(.m4a)"
     ],

@@ -168,6 +168,18 @@
 - **与 L012/L017 区别**：L012/L017 讲数据表/多列信息图重建为 HTML `<table>`；本条强调**主动识别"图=表/卡片"** + 用 `block_convert_content_to_blocks` 一步生成原生表格块 + **原图与表格块并存**。
 - **同步更新**：pdf-processing.md Step 4；本文件。
 
+#### L021: 播客/视频文字稿须含 Show Notes，置于逐字稿之前（2026-06-24, 用户反馈）
+- **背景**：厚雪长波转存后，文字稿直接从 ASR 逐字内容开始，缺少节目介绍、嘉宾摘要、本期剧透时间线——而这些 shownotes 信息密度远高于逐字稿开头。
+- **根因**：`podcast_to_lexiang.py` 只输出元信息 blockquote + 逐字稿；Agent 用 WebFetch 抓到的 shownotes 未写入 metadata，脚本也未自动从页面抓取。
+- **正确做法**：
+  1. 文字稿结构：`# 标题` → 元信息 → `## 节目介绍`（Show Notes，截断 footer）→ `## 逐字稿`
+  2. 小宇宙：脚本 Step 0 从 `__NEXT_DATA__.episode.description` 自动抓取；yt-dlp description 仅为节目级简介，**不可代替**
+  3. Agent 应在 WebFetch 阶段把完整 shownotes 写入 `metadata.json` 的 `shownotes` 字段（优先于自动抓取）
+  4. 无 `chapters.json` 时，从 shownotes「1、09:36 标题」格式自动提取章节
+  5. YouTube：`yt_download_transcribe.py` 在 `## 逐字稿` 前插入 `## 视频介绍`（description）
+- **自检项**：播客/视频归档后，打开文字稿确认「节目介绍/视频介绍」在逐字稿之前且含摘要/时间线。
+- **同步更新**：podcast_to_lexiang.py, yt_download_transcribe.py, podcast-audio.md, youtube-video.md, SKILL.md v2.8.0
+
 #### L009: 翻译默认用当前模型，Gemini 改为备选
 - **背景**：用户要求默认用运行 skill 的大模型翻译。
 - **正确做法**：🥇 默认 Agent（当前模型）逐块翻译；🥈 仅当用户**明确要求**用 Gemini **且**提供 `GEMINI_API_KEY` 时才用 `translate_gemini.py`。用 gemini 脚本时务必校验是否有分块翻译失败（脚本失败会静默保留英文原文），发现未翻译区段需补译。
@@ -216,7 +228,7 @@
 | 2026-06-24 | 用户连续 3 次指出仍有漏图（一页多图/页码空档） | 逐页渲染全本 PDF + 颜色识别图表页 + 一页多图检测 + PDF/线上/本地三方对账（L018） | SKILL.md, pdf-processing.md, lessons-learned.md |
 | 2026-06-24 | 用户指出样式化表格图未转表格块、原图也没展示 | 识别"图=表/卡片"→ block_convert_content_to_blocks 一步建原生表格块 + 原图并存 + 按 id 批删旧段落（L019） | pdf-processing.md, lessons-learned.md |
 | 2026-06-24 | 用户指出又一张卡片被拍平+`$^{19}$` 乱码，并要求"同类问题反复=自动反思" | 【元规则】同类问题第 2 次被指出即判系统性问题，主动全文同类排查+一次性全修+自动更新 skill（L020）；并清理全文 `$^{N}$` LaTeX 残留→Unicode 上标、补修 2.4x/Three actions 卡片为原图+原生表格 | SKILL.md, pdf-processing.md, lessons-learned.md |
-| 2026-06-24 | 用户要求把「PDF 图文翻译」抽离为独立 skill 并精简本 skill | 新建 `pdf-rich-translate`（项目 `.cursor/skills/`）承载提取/裁剪/翻译/富元素；本 skill pdf-processing.md 精简为「归档侧」(517→73 行)、新增标注→callout/表格块渲染；平台抓取(Substack/X/微博/web_fetch)归位 platform-specific.md；删除失效 translate_article.py 引用；版本 2.6.0→2.7.0 | SKILL.md, pdf-processing.md, platform-specific.md, lessons-learned.md |
+| 2026-06-24 | 用户要求播客 shownotes 置于逐字稿前 | Show Notes 自动抓取 + `## 节目介绍` 区块；YouTube description 同理（L021） | podcast_to_lexiang.py, yt_download_transcribe.py, podcast-audio.md, SKILL.md 2.8.0 |
 
 ---
 

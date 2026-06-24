@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "2.7.0"
+version: "2.8.0"
 author: ajaxhe
 license: MIT
 category: research
@@ -83,7 +83,7 @@ Step 5: 📝 自省（有问题则更新 lessons-learned.md）
 | 1 | 微信公众号 `mp.weixin.qq.com` | 乐享 MCP `file_create_hyperlink` 一步到位 | [platform-specific.md](references/platform-specific.md) |
 | 2 | YouTube 视频 | `scripts/yt_download_transcribe.py` | [youtube-video.md](references/youtube-video.md) |
 | 2b | 含嵌入视频/播客的文章（Substack/Newsletter 等） | 提取 YouTube 链接 → `yt_download_transcribe.py` | [youtube-video.md](references/youtube-video.md) |
-| 3 | 播客音频（小宇宙等）| `scripts/podcast_to_lexiang.py`（转录） + 标题文件夹归档 | [podcast-audio.md](references/podcast-audio.md) |
+| 3 | 播客音频（小宇宙等）| `scripts/podcast_to_lexiang.py`（**Show Notes + 转录**） + 标题文件夹归档 | [podcast-audio.md](references/podcast-audio.md) |
 | 4 | **PDF（乐享内条目 / 直链 / 本地）需翻译+富排版** | **组合 `pdf-rich-translate` skill** 做提取/裁剪/翻译/富元素标注 → 本 skill 归档 | [pdf-processing.md](references/pdf-processing.md)（归档侧） + `pdf-rich-translate` |
 | 5 | 付费/登录墙文章 | `scripts/fetch_article.py`（Cookie/CDP） | 见下方 |
 | 6 | 免费图文文章 | `scripts/fetch_article.py` | 见下方 |
@@ -246,7 +246,7 @@ Agent 执行：
 | **纯文本 >30K 字符（大文档）** | **`scripts/upload_doc_to_lexiang.py`** 或 **MCP Direct HTTP Call**（见下方） |
 | 视频/音频（仅上传文件） | `scripts/upload_video_via_openapi.py --media-type video/audio` |
 | **视频转录归档（文字稿+视频）** | 创建标题文件夹 → 文字稿上传为 file → 视频作为子文档（见 [youtube-video.md](references/youtube-video.md)） |
-| **播客转录归档（文字稿+音频）** | 创建标题文件夹 → 文字稿上传为 file → 音频作为子文档（见 [podcast-audio.md](references/podcast-audio.md)） |
+| **播客转录归档（Show Notes + 文字稿 + 音频）** | 创建标题文件夹 → 文字稿（含节目介绍）上传为 file → 音频作为子文档（见 [podcast-audio.md](references/podcast-audio.md)） |
 
 ### 🚨 MCP 直接调用方法（L021 — 无 LEXIANG_TOKEN 时的首选降级方案）
 
@@ -435,7 +435,7 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 |------|------|
 | `scripts/lexiang_pdf_parse.py` | **读取乐享内 PDF 原文**：调用 `entry_describe_ai_parse_content` 拿完整解析 markdown + 图片清单 + 元信息（含转存目标 `parent_id`），可选下载原 PDF |
 | `scripts/upload_doc_to_lexiang.py` | **通用大文档上传**：绕过 MCP 参数限制，支持在线文档/文件两种模式 |
-| `scripts/podcast_to_lexiang.py` | **播客全流程**：下载→FunASR转录→Markdown→上传（一键执行） |
+| `scripts/podcast_to_lexiang.py` | **播客全流程**：下载→抓取Show Notes→FunASR转录→Markdown→上传 |
 | `scripts/fetch_article.py` | 抓取文章（Cookie/CDP/Substack） |
 | `scripts/md_to_page.py` | Markdown + 图片 → 乐享在线文档（需 LEXIANG_TOKEN） |
 | `scripts/yt_download_transcribe.py` | YouTube 下载 + Whisper 转录 + 翻译 |
@@ -463,6 +463,7 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 ```
 ✅ 交付自检清单：
 □ 1. 标题正确：文档标题与原文标题一致
+□ 1b. 【播客/视频】Show Notes 完整：`## 节目介绍`/`## 视频介绍` 在 `## 逐字稿` 之前，含摘要与章节时间线（如有）
 □ 2. 原文链接：文档中包含可追溯的原始 URL
 □ 3. 图片完整：原文有 N 张图 → 乐享文档中有 N 张图（用 block_list_block_children 验证 image block 存在且有 file_id）
 □ 3b. 【PDF】归档侧对账：本地 md 的 `![` 引用数 == 线上 image block 数（与 pdf-rich-translate 的「PDF 图表数 == 本地 ![ 数」凑成三方对账）

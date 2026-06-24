@@ -57,7 +57,7 @@ python3 scripts/yt_download_transcribe.py "<YouTube URL>" \
 - `<视频标题>.md` — 文字稿 Markdown（英文视频为中英对照格式）
 - `<视频标题>_meta.json` — 视频元信息
 
-**文字稿格式**（英文视频，中英对照）：
+**文字稿格式**（含视频介绍 + 逐字稿）：
 
 ```markdown
 # 视频标题
@@ -70,7 +70,13 @@ python3 scripts/yt_download_transcribe.py "<YouTube URL>" \
 
 ---
 
-## 文字稿（中英对照）
+## 视频介绍
+
+（YouTube description / Show Notes，yt-dlp 自动提取）
+
+---
+
+## 逐字稿（中英对照）
 
 > 以下内容采用「英文原文 + 中文翻译」对照排列。
 

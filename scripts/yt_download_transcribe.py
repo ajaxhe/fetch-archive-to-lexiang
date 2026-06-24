@@ -382,11 +382,23 @@ def generate_markdown(video_info: dict, paragraphs: list,
     lines.append("---")
     lines.append("")
 
+    description = (video_info.get("description") or "").strip()
+    if description:
+        lines.append("## 视频介绍")
+        lines.append("")
+        for para in description.split("\n"):
+            para = para.strip()
+            if para:
+                lines.append(para)
+                lines.append("")
+        lines.append("---")
+        lines.append("")
+
     # 正文
     is_bilingual = translations and any(t is not None for t in translations)
 
     if is_bilingual:
-        lines.append("## 文字稿（中英对照）")
+        lines.append("## 逐字稿（中英对照）")
         lines.append("")
         lines.append("> 以下内容采用「英文原文 + 中文翻译」对照排列。")
         lines.append("")
@@ -405,7 +417,7 @@ def generate_markdown(video_info: dict, paragraphs: list,
             lines.append("---")
             lines.append("")
     else:
-        lines.append("## 文字稿")
+        lines.append("## 逐字稿")
         lines.append("")
 
         for para in paragraphs:
