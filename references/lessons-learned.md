@@ -33,6 +33,21 @@
 
 ### 🟡 P1 — 偶尔犯的错误（需要注意）
 
+#### L013: MCP `file_apply_upload` 无法产生可播放视频 + OpenAPI api_base / token 格式错误（2026-06-23）
+- **问题1**：用 MCP 的 `file_apply_upload` + `file_commit_upload` 上传视频，产物 `entry_type=file + extension=video`，**视频无法在线播放**（只能下载）
+- **根因**：MCP `file_apply_upload` 走的是普通文件上传通道（COS 直传），不触发 VOD 转码。只有 OpenAPI 的 `/cgi-bin/v1/kb/files/upload-params`（media_type=video）签发的 state，配合 `/cgi-bin/v1/kb/entries` 创建 `entry_type=video`，才会触发 VOD 转码
+- **问题2**：`upload_video_via_openapi.py` 的 `DEFAULT_API_BASE` 原为 `https://lexiangla.com`（前端域名），导致 `/cgi-bin/token` 返回 404
+- **正确 api_base**：`https://lxapi.lexiangla.com`（OpenAPI 专用域名，见官方文档 https://lexiang.tencent.com/wiki/api/ ）
+- **问题3**：`get_access_token` 原用 `form_body`（`application/x-www-form-urlencoded`），但乐享 OpenAPI token 接口要求 `Content-Type: application/json` + JSON body
+- **正确做法**：
+  1. 视频上传**必须**用 `upload_video_via_openapi.py`（OpenAPI 三步流程），**禁止**用 MCP `file_apply_upload`
+  2. `~/.lexiang/openapi.json` 只需 `app_key` / `app_secret` / `staff_id`，`api_base` 有默认值 `https://lxapi.lexiangla.com`
+  3. token 接口必须用 JSON body（已在脚本中修正）
+  4. 上传后 VOD 转码需要几秒到几分钟，`status` 从 `processing` 变为 `finished` 后可播放
+  5. 删除旧条目可用 OpenAPI `DELETE /cgi-bin/v1/kb/entries/{entry_id}?space_id=xxx`
+- **已修复**：`upload_video_via_openapi.py` 的 `DEFAULT_API_BASE` 和 `get_access_token` 函数
+- **同步更新**：本文件；SKILL.md youtube 视频流程说明
+
 #### L003: 翻译时丢失图片占位符
 - **问题**：翻译英文文章为中英对照时，原文中的 `![](images/xxx)` 图片引用被翻译过程吃掉了
 - **正确做法**：翻译时必须保留所有 `![](...)` 引用不动，或翻译完成后用锚点匹配重新插入
@@ -153,6 +168,7 @@
 | 2026-06-23 | 用户确认 stat 高亮框应放 callout | 统计卡片合并为 📊 callout 块；apply_stat_callouts.py 增量替换（L016） | pdf-processing.md, lessons-learned.md, apply_stat_callouts.py |
 | 2026-06-23 | 用户问多列信息图能否用 col/表格、布局内不加标题 | 多列卡片重建为 HTML 三列表格 + strong 加粗（L017） | pdf-processing.md, apply_three_col_table.py |
 | 2026-06-22 | 用户反馈目录页表格冗余 | 目录页单独重建为一行一章清单，保留正文数据表格（L010） | pdf-processing.md, lessons-learned.md |
+| 2026-06-23 | YouTube 视频上传后无法播放（MCP file_apply_upload 产物 entry_type=file） | 修正 api_base 为 lxapi.lexiangla.com + token 改 JSON body + 视频必须走 OpenAPI（L013） | upload_video_via_openapi.py, lessons-learned.md |
 
 ---
 

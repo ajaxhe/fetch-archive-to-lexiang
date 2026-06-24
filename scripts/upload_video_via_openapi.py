@@ -49,15 +49,23 @@ from typing import Any
 CONFIG_PATH = os.path.expanduser("~/.lexiang/openapi.json")
 TOKEN_CACHE_PATH = os.path.expanduser("~/.lexiang/token_cache.json")
 
+# api_base 默认值：外部乐享 OpenAPI 域名（lxapi.lexiangla.com）。
+# 文档：https://lexiang.tencent.com/wiki/api/ → "获取 access_token" 一节
+# 腾讯内部乐享用户可在 openapi.json 中覆盖为 "https://lexiang.tencent.com"。
+DEFAULT_API_BASE = "https://lxapi.lexiangla.com"
+
 
 def load_config() -> dict:
     if not os.path.exists(CONFIG_PATH):
         raise FileNotFoundError(
             f"凭证文件不存在: {CONFIG_PATH}\n"
-            f"需要字段: app_key, app_secret, staff_id, api_base"
+            f"需要字段: app_key, app_secret, staff_id\n"
+            f"api_base 可选（默认 {DEFAULT_API_BASE}；腾讯内部乐享填 https://lexiang.tencent.com）"
         )
     with open(CONFIG_PATH) as f:
-        return json.load(f)
+        cfg = json.load(f)
+    cfg.setdefault("api_base", DEFAULT_API_BASE)
+    return cfg
 
 
 def http_json(
@@ -104,7 +112,7 @@ def get_access_token(cfg: dict, *, force_refresh: bool = False) -> str:
     url = f"{cfg['api_base']}/cgi-bin/token"
     result = http_json(
         url,
-        form_body={
+        json_body={
             "grant_type": "client_credentials",
             "app_key": cfg["app_key"],
             "app_secret": cfg["app_secret"],
