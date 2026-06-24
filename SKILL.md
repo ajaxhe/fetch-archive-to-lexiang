@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "2.4.0"
+version: "2.7.0"
 author: ajaxhe
 license: MIT
 category: research
@@ -84,8 +84,7 @@ Step 5: 📝 自省（有问题则更新 lessons-learned.md）
 | 2 | YouTube 视频 | `scripts/yt_download_transcribe.py` | [youtube-video.md](references/youtube-video.md) |
 | 2b | 含嵌入视频/播客的文章（Substack/Newsletter 等） | 提取 YouTube 链接 → `yt_download_transcribe.py` | [youtube-video.md](references/youtube-video.md) |
 | 3 | 播客音频（小宇宙等）| `scripts/podcast_to_lexiang.py`（转录） + 标题文件夹归档 | [podcast-audio.md](references/podcast-audio.md) |
-| 4 | **乐享内 PDF 条目**（`lexiangla.com/pages/xxx`，英文待翻译） | `scripts/lexiang_pdf_parse.py`（AI 解析拿全原文）→ 翻译 → 转存回**同目录** | [pdf-processing.md](references/pdf-processing.md)「乐享内英文 PDF」专用流程 |
-| 4b | PDF 直链/本地 PDF | pymupdf 提取+裁剪 | [pdf-processing.md](references/pdf-processing.md) |
+| 4 | **PDF（乐享内条目 / 直链 / 本地）需翻译+富排版** | **组合 `pdf-rich-translate` skill** 做提取/裁剪/翻译/富元素标注 → 本 skill 归档 | [pdf-processing.md](references/pdf-processing.md)（归档侧） + `pdf-rich-translate` |
 | 5 | 付费/登录墙文章 | `scripts/fetch_article.py`（Cookie/CDP） | 见下方 |
 | 6 | 免费图文文章 | `scripts/fetch_article.py` | 见下方 |
 | 7 | 得到 APP | `fetch_article.py --cdp` | [platform-specific.md](references/platform-specific.md) |
@@ -466,7 +465,10 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 □ 1. 标题正确：文档标题与原文标题一致
 □ 2. 原文链接：文档中包含可追溯的原始 URL
 □ 3. 图片完整：原文有 N 张图 → 乐享文档中有 N 张图（用 block_list_block_children 验证 image block 存在且有 file_id）
-□ 4. 图片位置：用 block_fetch_page(render_mode="clean") 检查每张图片是否在正确的段落之间（不是聚集在页面底部或嵌套在引用块内）
+□ 3b. 【PDF】归档侧对账：本地 md 的 `![` 引用数 == 线上 image block 数（与 pdf-rich-translate 的「PDF 图表数 == 本地 ![ 数」凑成三方对账）
+□ 4. 图片位置：用 block_fetch_page(render_mode="clean") 检查每张图片是否在正确的段落之间（不是聚集在页面底部或嵌套在引用块内）；每个图注块后须紧跟一张图
+□ 4b. 【PDF】标注已渲染成专有块：`> [!stat]`/`> [!definition]` → callout 块；样式化表 → 原图 + 原生表格块（见 pdf-processing.md Step 3）
+□ 4d. 【元规则·同类排查】若用户就同一类问题开口 ≥2 次（哪怕实例不同）→ 不许只修被指那一个；必须把问题抽象成特征、全文扫描所有同类实例、一次性全修，并在本轮自动更新 skill（L020）
 □ 5. 翻译完整：非中文文章已翻译为中英对照，无遗漏段落
 □ 6. 格式规范：标题层级、列表、引用等格式保留
 □ 7. 目录正确：文档在正确的日期目录/指定目录下
@@ -487,6 +489,7 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 1. 用户指出了本次执行中的错误或遗漏
 2. 自检清单中有未通过的项
 3. 执行过程中发现了新的技巧或踩坑经验
+4. 【强制·自动】用户就**同一类**问题开口 ≥2 次（哪怕是不同实例）→ 立即判定为系统性问题，**不等用户说"更新 skill"**，本轮即：①全文同类排查并全部修复 ②沉淀根因到 lessons-learned ③更新自检清单+升版本号（L020）
 
 **执行动作**：
 - 读取 [references/lessons-learned.md](references/lessons-learned.md)
@@ -499,7 +502,7 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 | 文件 | 何时加载 |
 |------|----------|
 | [references/lexiang-upload.md](references/lexiang-upload.md) | 上传到乐享时遇到问题、需要降级方案 |
-| [references/pdf-processing.md](references/pdf-processing.md) | 处理 PDF 文件（提取文字+裁剪图形） |
+| [references/pdf-processing.md](references/pdf-processing.md) | **PDF 归档侧**：把 pdf-rich-translate 产出的双语包导入乐享、标注渲染成专有块、增量改块（提取/翻译用 `pdf-rich-translate` skill） |
 | [references/youtube-video.md](references/youtube-video.md) | 处理 YouTube 视频（下载+转录+翻译） |
 | [references/podcast-audio.md](references/podcast-audio.md) | 处理播客音频（下载+转录） |
 | [references/platform-specific.md](references/platform-specific.md) | 微信公众号/得到/SPA/微博等特定平台 |
