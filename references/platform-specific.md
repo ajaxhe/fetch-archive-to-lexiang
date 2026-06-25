@@ -133,7 +133,7 @@ if content_el:
 
 **适用场景**：得到 APP 专栏文章（`www.dedao.cn/course/article?id=xxx`）
 
-**TODO**：考虑在 `fetch_article.py` 中增加得到专用检测和选择器（类似微信公众号的 `_is_wechat_article` 机制），自动使用 `.iget-articles` 提取正文。
+**计划**：考虑在 `fetch_article.py` 中增加得到专用检测和选择器（类似微信公众号的 `_is_wechat_article` 机制），自动使用 `.iget-articles` 提取正文。
 
 ### SPA 网站 Playwright 直接出 PDF（正文隔离方案）
 
