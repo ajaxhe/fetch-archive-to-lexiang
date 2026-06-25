@@ -1,7 +1,7 @@
 {
   "skill_name": "fetch-archive-to-lexiang",
   "display_name": "Fetch & Archive to Lexiang",
-  "version": "2.8.0",
+  "version": "2.8.2",
   "github_repo": "ajaxhe/fetch-archive-to-lexiang",
   "category": "research",
   "tags": ["fetch", "archive", "youtube", "podcast", "pdf", "transcribe", "lexiang", "paywall", "substack", "medium", "chinese"],

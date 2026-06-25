@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "2.8.0"
+version: "2.8.2"
 author: ajaxhe
 license: MIT
 category: research
@@ -63,7 +63,7 @@ Step 5: 📝 自省（有问题则更新 lessons-learned.md）
 - 基于侦察结果，**在开始抓取前向用户确认执行计划**：
   ```
   📋 预检报告：
-  - 标题：XXX
+  - 标题：（预检后填入实际标题）
   - 语言：英文 → 需翻译为中英对照
   - 图片：发现 N 张配图 → 将使用 fetch_article.py 抓取
   - 预计上传方式：md_to_page.py（含图片）
