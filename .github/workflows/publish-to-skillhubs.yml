@@ -5,340 +5,177 @@ on:
     branches: [main]
     paths:
       - "SKILL.md"
+      - "publish.json"
       - "scripts/**"
       - "references/**"
       - "README.md"
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Platforms to publish (comma-separated: clawhub,agentskillhub,skillshubai,pr or 'all')"
+        description: "clawhub,agentskillhub,skillshubai,pr or all"
         required: false
         default: "all"
       dry_run:
-        description: "Dry run (skip actual publish)"
+        description: "Dry run"
         required: false
         default: "false"
         type: boolean
 
-# ── Secrets needed (run scripts/setup-tokens.sh once to configure) ────────
-# CLAWHUB_TOKEN       → cat "~/Library/Application Support/clawhub/config.json" | jq .token
-# AGENTSKILLHUB_TOKEN → cat ~/.skhub/auth.json | jq '.credentials[].token'
-# SKILLSHUBAI_TOKEN   → from skills-hub.ai/settings/api-keys
-# ─────────────────────────────────────────────────────────────────────────
-
-env:
-  GITHUB_REPO_URL: "https://github.com/${{ github.repository }}"
-  SKILL_NAME: "fetch-archive-to-lexiang"
-
 jobs:
-  # ═══════════════════════════════════════════════════════════════════════
-  # Platform 1: clawhub.ai — clawhub CLI via stored token
-  # Token location: ~/Library/Application Support/clawhub/config.json
-  # ═══════════════════════════════════════════════════════════════════════
-  publish-clawhub:
-    name: "clawhub.ai"
+  load-config:
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.event.inputs.platforms, 'skip') && (github.event.inputs.platforms == '' || github.event.inputs.platforms == 'all' || contains(github.event.inputs.platforms, 'clawhub')) }}
+    outputs:
+      skill_name: ${{ steps.cfg.outputs.skill_name }}
+      display_name: ${{ steps.cfg.outputs.display_name }}
+      version: ${{ steps.cfg.outputs.version }}
+      tags: ${{ steps.cfg.outputs.tags }}
+      clawscan_note: ${{ steps.cfg.outputs.clawscan_note }}
     steps:
       - uses: actions/checkout@v4
+      - id: cfg
+        run: |
+          python3 <<'PY'
+          import json, re, os, sys
 
+          def read_fm(path):
+              text = open(path).read()
+              m = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
+              fm = {}
+              if m:
+                  for line in m.group(1).splitlines():
+                      if ':' in line:
+                          k, _, v = line.partition(':')
+                          fm[k.strip()] = v.strip().strip('"')
+              return fm
+
+          cfg = {}
+          if os.path.exists('publish.json'):
+              cfg = json.load(open('publish.json'))
+          fm = read_fm('SKILL.md')
+          name = cfg.get('skill_name') or fm.get('name') or os.path.basename(os.getcwd())
+          display = cfg.get('display_name') or name.replace('-', ' ').title()
+          version = cfg.get('version') or fm.get('version') or '1.0.0'
+          tags = cfg.get('tags') or []
+          if isinstance(tags, list):
+              tags = ','.join(tags)
+          note = cfg.get('clawscan_note', '')
+
+          out = os.environ['GITHUB_OUTPUT']
+          with open(out, 'a') as f:
+              f.write(f"skill_name={name}\n")
+              f.write(f"display_name={display}\n")
+              f.write(f"version={version}\n")
+              f.write(f"tags={tags}\n")
+              f.write(f"clawscan_note={note}\n")
+          PY
+
+  publish-clawhub:
+    needs: load-config
+    name: clawhub.ai
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.platforms == '' || github.event.inputs.platforms == 'all' || contains(github.event.inputs.platforms, 'clawhub') }}
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Install clawhub CLI
-        run: npm install -g @clawhub/cli --silent
-
-      - name: Publish to clawhub.ai
-        env:
+      - run: npm install -g @clawhub/cli --silent
+      - env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
         run: |
-          if [ -z "$CLAWHUB_TOKEN" ]; then
-            echo "⚠️  CLAWHUB_TOKEN not set. Run: bash scripts/setup-tokens.sh"
-            exit 0
-          fi
-
-          # Write token to config (Linux path for CI)
+          [ -z "$CLAWHUB_TOKEN" ] && echo "⚠️ CLAWHUB_TOKEN not set" && exit 0
           mkdir -p "$HOME/.config/clawhub"
-          echo "{\"registry\":\"https://registry.clawhub.ai\",\"token\":\"$CLAWHUB_TOKEN\"}" \
-            > "$HOME/.config/clawhub/config.json"
+          echo "{\"registry\":\"https://registry.clawhub.ai\",\"token\":\"$CLAWHUB_TOKEN\"}" > "$HOME/.config/clawhub/config.json"
+          [ "${{ inputs.dry_run }}" = "true" ] && echo "[DRY RUN]" && exit 0
+          clawhub --workdir "$(dirname $(pwd))" publish "$(basename $(pwd))" \
+            --slug "${{ needs.load-config.outputs.skill_name }}" \
+            --name "${{ needs.load-config.outputs.display_name }}" \
+            --version "${{ needs.load-config.outputs.version }}" \
+            --tags "${{ needs.load-config.outputs.tags }},latest" \
+            --no-input
 
-          SKILL_VERSION=$(grep '^version:' SKILL.md | head -1 | sed 's/version: *//;s/"//g')
-
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "[DRY RUN] clawhub publish . --version $SKILL_VERSION"
-          else
-            clawhub --workdir "$(dirname $(pwd))" publish "$(basename $(pwd))" \
-              --slug "$SKILL_NAME" \
-              --name "Fetch & Archive to Lexiang" \
-              --version "$SKILL_VERSION" \
-              --changelog "$(git log --oneline -3 | tr '\n' ' ')" \
-              --tags "latest,fetch,archive,youtube,podcast,pdf,chinese,lexiang" \
-              --no-input
-            echo "✅ Published → https://clawhub.ai/skills/$SKILL_NAME"
-          fi
-
-  # ═══════════════════════════════════════════════════════════════════════
-  # Platform 2: agentskillhub.dev — REST API with Bearer token
-  # Token location: ~/.skhub/auth.json → credentials[url].token
-  # ═══════════════════════════════════════════════════════════════════════
   publish-agentskillhub:
-    name: "agentskillhub.dev"
+    needs: load-config
+    name: agentskillhub.dev
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.platforms == '' || github.event.inputs.platforms == 'all' || contains(github.event.inputs.platforms, 'agentskillhub') }}
     steps:
-      - name: Import via REST API
-        env:
+      - env:
           AGENTSKILLHUB_TOKEN: ${{ secrets.AGENTSKILLHUB_TOKEN }}
+          REPO_URL: https://github.com/${{ github.repository }}
+          SKILL_NAME: ${{ needs.load-config.outputs.skill_name }}
         run: |
-          if [ -z "$AGENTSKILLHUB_TOKEN" ]; then
-            echo "⚠️  AGENTSKILLHUB_TOKEN not set."
-            echo ""
-            echo "One-time setup:"
-            echo "  1. npm install -g skhub && skhub login   (opens browser)"
-            echo "  2. bash scripts/setup-tokens.sh          (writes to GitHub Secrets)"
-            echo ""
-            echo "Manual fallback:"
-            echo "  → https://agentskillhub.dev"
-            echo "  → Add Skills → paste: $GITHUB_REPO_URL"
-            exit 0
-          fi
-
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "[DRY RUN] POST /api/v1/repos/import  URL=$GITHUB_REPO_URL"
-            exit 0
-          fi
-
-          echo "📡 Analyzing repo..."
-          ANALYZE=$(curl -sf -w "\n%{http_code}" \
-            -X POST "https://agentskillhub.dev/api/v1/repos/analyze" \
+          [ -z "$AGENTSKILLHUB_TOKEN" ] && echo "⚠️ AGENTSKILLHUB_TOKEN not set" && exit 0
+          [ "${{ inputs.dry_run }}" = "true" ] && echo "[DRY RUN]" && exit 0
+          curl -sf -X POST "https://agentskillhub.dev/api/v1/repos/import" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $AGENTSKILLHUB_TOKEN" \
-            -d "{\"url\": \"$GITHUB_REPO_URL\"}" 2>/dev/null || echo "{}\n000")
+            -d "{\"repoFullName\": \"${{ github.repository }}\", \"selectedPaths\": [\".\"]}" \
+            || echo "⚠️ agentskillhub import failed (platform GitHub integration may be down)"
 
-          HTTP=$(echo "$ANALYZE" | tail -1)
-          BODY=$(echo "$ANALYZE" | head -n -1)
-          echo "HTTP $HTTP: $BODY" | head -c 200
-
-          if [[ "$HTTP" == "200" || "$HTTP" == "201" ]]; then
-            echo ""
-            echo "📥 Importing..."
-            curl -sf \
-              -X POST "https://agentskillhub.dev/api/v1/repos/import" \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $AGENTSKILLHUB_TOKEN" \
-              -d "{\"url\": \"$GITHUB_REPO_URL\", \"skills\": [\"$SKILL_NAME\"]}" \
-              | head -c 200
-            echo ""
-            echo "✅ Published → https://agentskillhub.dev/skills/$SKILL_NAME"
-          else
-            echo "⚠️  API returned HTTP $HTTP. Token may have expired."
-            echo "   Re-run: skhub login && bash scripts/setup-tokens.sh"
-          fi
-
-  # ═══════════════════════════════════════════════════════════════════════
-  # Platform 3: skills-hub.ai — Direct REST API (bypasses broken CLI dep)
-  # Token: SKILLSHUBAI_TOKEN (API key from skills-hub.ai/settings/api-keys)
-  # SKILL.md needs: category field (added: "research")
-  # ═══════════════════════════════════════════════════════════════════════
   publish-skillshubai:
-    name: "skills-hub.ai"
+    needs: load-config
+    name: skills-hub.ai
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.platforms == '' || github.event.inputs.platforms == 'all' || contains(github.event.inputs.platforms, 'skillshubai') }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Parse SKILL.md and publish via API
-        env:
+      - env:
           SKILLSHUBAI_TOKEN: ${{ secrets.SKILLSHUBAI_TOKEN }}
         run: |
-          if [ -z "$SKILLSHUBAI_TOKEN" ]; then
-            echo "⚠️  SKILLSHUBAI_TOKEN not set."
-            echo ""
-            echo "One-time setup:"
-            echo "  1. Visit https://skills-hub.ai/settings/api-keys"
-            echo "  2. Create an API key"
-            echo "  3. gh secret set SKILLSHUBAI_TOKEN --repo ${{ github.repository }}"
-            echo ""
-            echo "Or run: bash scripts/setup-tokens.sh"
-            exit 0
-          fi
-
-          # Parse SKILL.md fields with Python
-          PARSED=$(python3 - <<'PYEOF'
-          import sys, re
-
-          with open("SKILL.md") as f:
-              content = f.read()
-
-          # Extract frontmatter
+          [ -z "$SKILLSHUBAI_TOKEN" ] && echo "⚠️ SKILLSHUBAI_TOKEN not set" && exit 0
+          [ "${{ inputs.dry_run }}" = "true" ] && echo "[DRY RUN]" && exit 0
+          python3 <<'PY'
+          import json, re, os, urllib.request, urllib.error
+          token = os.environ["SKILLSHUBAI_TOKEN"]
+          repo_url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
+          content = open("SKILL.md").read()
           fm_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-          if not fm_match:
-              print("ERROR: no frontmatter")
-              sys.exit(1)
-
-          fm = fm_match.group(1)
-          body = content[fm_match.end():]
+          fm, body = fm_match.group(1), content[fm_match.end():]
 
           def get_field(name, text):
               m = re.search(rf'^{name}:\s*(.+)$', text, re.MULTILINE)
               return m.group(1).strip().strip('"') if m else ""
 
-          import json
-          result = {
-              "name": get_field("name", fm),
-              "version": get_field("version", fm),
-              "description": get_field("description", fm),
-              "category": get_field("category", fm),
-              "instructions": body.strip()
-          }
-
           tags_m = re.search(r'^tags:\s*(.+)$', fm, re.MULTILINE)
-          result["tags"] = [t.strip() for t in (tags_m.group(1).split(",") if tags_m else [])]
+          tags = [t.strip() for t in (tags_m.group(1).split(",") if tags_m else [])]
+          slug = get_field("name", fm)
+          cfg = json.load(open("publish.json")) if os.path.exists("publish.json") else {}
+          version = cfg.get("version") or get_field("version", fm) or "1.0.0"
 
-          print(json.dumps(result))
-          PYEOF
-          )
-
-          NAME=$(echo "$PARSED" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['name'])")
-          DESC=$(echo "$PARSED" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['description'])")
-          VERSION=$(echo "$PARSED" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['version'])")
-          CATEGORY=$(echo "$PARSED" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['category'])")
-          INSTRUCTIONS=$(echo "$PARSED" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['instructions'][:8000])")
-
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "[DRY RUN] POST https://api.skills-hub.ai/api/v1/skills"
-            echo "  name=$NAME  version=$VERSION  category=$CATEGORY"
-            exit 0
-          fi
-
-          echo "📤 Publishing to skills-hub.ai..."
-
-          # Build request body
-          BODY=$(python3 -c "
-          import json, sys
-          parsed=json.loads('''$PARSED''')
-          payload={
-              'name': parsed['name'],
-              'description': parsed['description'],
-              'version': parsed['version'],
-              'categorySlug': parsed['category'],
-              'platforms': ['CLAUDE_CODE', 'CURSOR', 'GEMINI_CLI'],
-              'instructions': parsed['instructions'][:8000],
-              'visibility': 'PUBLIC',
-              'tags': parsed['tags'][:10],
-              'githubRepoUrl': '$GITHUB_REPO_URL'
-          }
-          print(json.dumps(payload))
-          ")
-
-          # Check if skill already exists (update vs create)
-          EXISTING=$(curl -sf \
-            "https://api.skills-hub.ai/api/v1/skills/$SKILL_NAME" \
-            -H "Authorization: ApiKey $SKILLSHUBAI_TOKEN" 2>/dev/null || echo "")
-
-          if echo "$EXISTING" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('slug',''))" 2>/dev/null | grep -q "$SKILL_NAME"; then
-            echo "Skill exists — creating new version..."
-            SKILL_VERSION=$(echo "$PARSED" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['version'])")
-            RESPONSE=$(curl -sf \
-              -X POST "https://api.skills-hub.ai/api/v1/skills/$SKILL_NAME/versions" \
-              -H "Content-Type: application/json" \
-              -H "Authorization: ApiKey $SKILLSHUBAI_TOKEN" \
-              -d "$BODY" 2>/dev/null || echo "{\"error\":\"request failed\"}")
-          else
-            echo "Creating new skill..."
-            RESPONSE=$(curl -sf \
-              -X POST "https://api.skills-hub.ai/api/v1/skills" \
-              -H "Content-Type: application/json" \
-              -H "Authorization: ApiKey $SKILLSHUBAI_TOKEN" \
-              -d "$BODY" 2>/dev/null || echo "{\"error\":\"request failed\"}")
-
-            # Publish it (make visible)
-            SLUG=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('slug',''))" 2>/dev/null || echo "")
-            if [ -n "$SLUG" ]; then
-              curl -sf \
-                -X POST "https://api.skills-hub.ai/api/v1/skills/$SLUG/publish" \
-                -H "Content-Type: application/json" \
-                -H "Authorization: ApiKey $SKILLSHUBAI_TOKEN" \
-                -d "{}" 2>/dev/null || true
-            fi
-          fi
-
-          echo "$RESPONSE" | python3 -c "
-          import sys,json
-          d=json.load(sys.stdin)
-          if d.get('error'):
-              print(f'❌ Error: {d[\"error\"]}')
-          else:
-              slug=d.get('slug','?')
-              print(f'✅ Published → https://skills-hub.ai/skills/{slug}')
-          " 2>/dev/null || echo "$RESPONSE" | head -c 200
-
-  # ═══════════════════════════════════════════════════════════════════════
-  # Platform 4: agent-skills-hub (GitHub PR) — Manual trigger only
-  # Runs on: workflow_dispatch only (PRs need human review; avoid spam)
-  # ═══════════════════════════════════════════════════════════════════════
-  publish-agentskillshub-pr:
-    name: "agent-skills-hub (PR)"
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.platforms == 'all' || contains(github.event.inputs.platforms, 'pr')) }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: skill-source
-
-      - name: Clone and prepare fork
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ACTOR="${{ github.repository_owner }}"
-          BRANCH="add-fetch-archive-to-lexiang-$(date +%Y%m%d)"
-
-          # Clone public repo (no auth needed for read)
-          git clone --depth=1 \
-            https://github.com/agent-skills-hub/agent-skills-hub.git \
-            /tmp/agent-skills-hub
-
-          TARGET="/tmp/agent-skills-hub/skills/$SKILL_NAME"
-          mkdir -p "$TARGET"
-          cp -r skill-source/{SKILL.md,README.md,config.json.example,scripts,references} "$TARGET/"
-          [ -f skill-source/.gitignore ] && cp skill-source/.gitignore "$TARGET/"
-          # Remove publish automation scripts from the submission (they're internal)
-          rm -f "$TARGET/scripts/setup-tokens.sh"
-          rm -f "$TARGET/scripts/publish-to-skillhubs.sh"
-
-          cd /tmp/agent-skills-hub
-          git config user.email "github-actions@github.com"
-          git config user.name "GitHub Actions"
-          git remote set-url origin \
-            "https://x-access-token:${GH_TOKEN}@github.com/${ACTOR}/agent-skills-hub.git"
-
-          git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
-          git add "skills/$SKILL_NAME/"
-          git diff --staged --quiet && { echo "No changes to commit"; exit 0; }
-          git commit -m "feat: add $SKILL_NAME"
-
-          git push origin "$BRANCH" --force 2>/dev/null || {
-            echo "⚠️  Push failed. Fork may not exist."
-            echo "   → gh repo fork agent-skills-hub/agent-skills-hub"
-            exit 0
+          payload = {
+              "name": slug,
+              "description": get_field("description", fm)[:500] or slug,
+              "version": version,
+              "categorySlug": get_field("category", fm) or cfg.get("category", "productivity"),
+              "platforms": ["CLAUDE_CODE", "CURSOR", "GEMINI_CLI"],
+              "instructions": body.strip()[:8000],
+              "visibility": "PUBLIC",
+              "tags": tags[:10],
+              "githubRepoUrl": repo_url,
           }
 
-          gh pr create \
-            --repo "agent-skills-hub/agent-skills-hub" \
-            --head "${ACTOR}:${BRANCH}" \
-            --title "feat: add $SKILL_NAME" \
-            --body "## $SKILL_NAME
+          def api(method, path, data=None):
+              req = urllib.request.Request(
+                  f"https://api.skills-hub.ai/api/v1/skills{path}",
+                  data=json.dumps(data).encode() if data is not None else None,
+                  headers={"Content-Type": "application/json", "Authorization": f"ApiKey {token}", "User-Agent": "Mozilla/5.0"},
+                  method=method,
+              )
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      return resp.status, json.loads(resp.read())
+              except urllib.error.HTTPError as e:
+                  return e.code, json.loads(e.read())
 
-          Universal web article fetcher and archiver.
-
-          **Features:**
-          - Bypass paywalls (Substack, Medium, 知识星球, Weibo)
-          - YouTube download + Whisper transcription
-          - Podcast audio download + transcription (小宇宙FM)
-          - PDF extraction + bilingual (EN/ZH) translation
-          - Archive to [Lexiang (乐享)](https://lexiangla.com) knowledge base
-
-          **Source:** $GITHUB_REPO_URL" 2>/dev/null \
-          && echo "✅ PR created" \
-          || echo "⚠️  PR already exists or creation failed"
+          code, data = api("GET", f"/{slug}")
+          if code == 404:
+              code, data = api("POST", "", payload)
+              if code in (200, 201):
+                  api("POST", f"/{slug}/publish", {})
+          elif code == 200:
+              code, data = api("POST", f"/{slug}/versions", payload)
+              if code in (200, 201):
+                  api("POST", f"/{slug}/publish", {})
+          print(f"skills-hub HTTP {code}: {data.get('status') or data.get('error')}")
+          PY
