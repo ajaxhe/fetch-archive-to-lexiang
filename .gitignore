@@ -14,3 +14,6 @@ config.json
 .lexiang/
 openapi.json
 token_cache.json
+
+# 运行时输出（抓取的文章等）
+output/
