@@ -204,6 +204,18 @@
 
 ---
 
+#### L022:【环境适配·WorkBuddy 沙箱】fetch_article.py / 连接器 token / MCP 响应结构 三处实战坑（2026-07-06, 实战踩坑）
+- **背景**：在 WorkBuddy 沙箱执行 elenaverna.com（Substack）转存时，连续踩中三处环境坑，逐一排查后固化成本教训。
+- **坑1 — fetch_article.py 在沙箱不可用**：脚本需要 `cryptography`（读 Chrome cookie）和 Playwright Chromium。managed python 装了 cryptography，但 `playwright install chromium` 在沙箱里**静默无产出**（EXIT=0 但 ~/.cache/ms-playwright 为空，网络被限），导致脚本拉起浏览器时被 SIGKILL（137）。
+  - **正确做法**：Substack 免费文直接用 `curl -A "<UA>"` 抓 HTML → 正则提取 `<div class="available-content">` 正文 → 用 `html2text` 转 markdown；图片从各 `<img>` 的 `data-attrs` 里取 `&quot;src&quot;:&quot;https://substack-post-media...&quot;` 的**原图 S3 地址**，`curl` 可直接下载（无需 cookie）；按文档出现顺序把正文 `<img>` 映射到本地 `images/imgN_xxx.ext`，avatar 图（width≤48）剔除。**禁止**在沙箱里死磕 Chromium。
+- **坑2 — 连接器 token 文件常过期（401）**：`~/.workbuddy/connectors/<profile>/tokens/lexiang-ol.txt` 里的 token 可能是旧的（实测 Jun 29 的文件 → 401 invalid or expired token）。
+  - **正确做法**：MCP Direct HTTP Call 鉴权头用 `X-Oneid-Access-Token`，**token 从 `~/.workbuddy/logs/<date>/workbuddyMainThread__*.log` 的 `X-Oneid-Access-Token":"..."` 行取最新一条**（日志里每隔 ~20-40min 刷新，取 `tail -1`）。或在 WorkBuddy 内直接走 DeferExecuteTool 调 `mcp__lexiang__*` 工具（由后台注入实时 token，最稳）。
+- **坑3 — MCP 工具响应结构与文档不符**：
+  - `file_apply_upload` 的预签名上传地址在 **`data.session.objects[0].upload_url`**（是个数组，每个 object 含 key/mime_type/upload_url），**不是** `data.session.upload_url`。COS PUT 用 Python `urllib.request`（禁 curl，%2F/%3B 会被 403）。
+  - `block_list_block_children` 返回的块**没有 index 字段**（只有 block_id/block_type/parent_id/text）。插入位置用**块在列表里的枚举序号（0-based）**当 `block_create_block_descendant` 的 `index`（扁平正文下等价）；从后往前插入避免位移。
+  - heading 文本存在 **`headingN`** 键（如 `heading2`），不在 `text`；删空块前先确认键名再判空。
+- **自检项**：沙箱转存 Substack 走 curl+html2text 路径；token 一律取日志最新；图片用 objects[0].upload_url + urllib PUT；插入 index 用列表枚举位置。
+
 ## 🔄 规则演化记录
 
 | 日期 | 触发事件 | 新增/修改的规则 | 影响范围 |
@@ -229,6 +241,7 @@
 | 2026-06-24 | 用户指出样式化表格图未转表格块、原图也没展示 | 识别"图=表/卡片"→ block_convert_content_to_blocks 一步建原生表格块 + 原图并存 + 按 id 批删旧段落（L019） | pdf-processing.md, lessons-learned.md |
 | 2026-06-24 | 用户指出又一张卡片被拍平+`$^{19}$` 乱码，并要求"同类问题反复=自动反思" | 【元规则】同类问题第 2 次被指出即判系统性问题，主动全文同类排查+一次性全修+自动更新 skill（L020）；并清理全文 `$^{N}$` LaTeX 残留→Unicode 上标、补修 2.4x/Three actions 卡片为原图+原生表格 | SKILL.md, pdf-processing.md, lessons-learned.md |
 | 2026-06-24 | 用户要求播客 shownotes 置于逐字稿前 | Show Notes 自动抓取 + `## 节目介绍` 区块；YouTube description 同理（L021） | podcast_to_lexiang.py, yt_download_transcribe.py, podcast-audio.md, SKILL.md 2.8.0 |
+| 2026-07-06 | 沙箱转存 Substack 踩三坑：Chromium 装不上 / token 文件过期 / MCP 响应结构不符 | curl+html2text 抓正文、日志取最新 token、objects[0].upload_url + 列表枚举 index（L022） | lessons-learned.md |
 
 ---
 
