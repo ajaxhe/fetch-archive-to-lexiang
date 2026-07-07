@@ -43,6 +43,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.parse
+import urllib.request
 from pathlib import Path
 
 # CDP debugging port for connecting to real Chrome
@@ -113,6 +114,89 @@ def _is_chrome_running() -> bool:
 _chrome_process: subprocess.Popen | None = None
 
 
+def _cdp_list_targets(port: int = CDP_PORT) -> list[dict]:
+    """List CDP targets via Chrome DevTools HTTP API."""
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=5) as resp:
+        return json.loads(resp.read())
+
+
+def _cdp_ensure_seed_tab(port: int = CDP_PORT) -> None:
+    """Ensure at least one page target exists before connect_over_cdp.
+
+    Playwright fails with 'Browser context management is not supported' when
+    the CDP Chrome instance has zero open tabs (common after all tabs closed).
+    """
+    try:
+        targets = _cdp_list_targets(port)
+    except Exception:
+        return
+    if any(t.get("type") == "page" for t in targets):
+        return
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/json/new?about:blank",
+        method="PUT",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        json.loads(resp.read())
+    print("📄 已创建 CDP 种子标签页（connect_over_cdp 需要至少一个 page target）")
+
+
+def _cdp_profile_dir() -> str:
+    return str(Path.home() / ".fetch_article" / "chrome_cdp_profile")
+
+
+def _sync_cookies_to_cdp_profile() -> None:
+    """Copy cookies from daily Chrome profile into the CDP profile."""
+    cdp_profile_dir = _cdp_profile_dir()
+    real_chrome_dir = _get_chrome_user_data_dir()
+    real_cookies = Path(real_chrome_dir) / "Default" / "Cookies"
+    cdp_cookies = Path(cdp_profile_dir) / "Default" / "Cookies"
+    if real_cookies.exists():
+        os.makedirs(str(cdp_cookies.parent), exist_ok=True)
+        try:
+            shutil.copy2(str(real_cookies), str(cdp_cookies))
+            print("🍪 已同步日常 Chrome 的 cookies 到 CDP profile")
+        except Exception as e:
+            print(f"⚠️  Cookies 同步失败: {e}")
+
+
+def _launch_cdp_chrome_via_open(port: int = CDP_PORT) -> bool:
+    """Launch CDP Chrome via macOS open (survives Agent shell termination)."""
+    cdp_profile_dir = _cdp_profile_dir()
+    os.makedirs(cdp_profile_dir, exist_ok=True)
+    _sync_cookies_to_cdp_profile()
+
+    if platform.system() == "Darwin":
+        cmd = [
+            "open", "-a", "Google Chrome", "--args",
+            f"--remote-debugging-port={port}",
+            f"--user-data-dir={cdp_profile_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-default-apps",
+        ]
+        print(f"🚀 通过 open 启动 CDP Chrome (profile: {cdp_profile_dir})")
+        subprocess.run(cmd, check=False)
+        return True
+
+    chrome_path = _find_chrome_executable()
+    if not chrome_path:
+        print("❌ 未找到系统 Chrome 浏览器")
+        return False
+    cmd = [
+        chrome_path,
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={cdp_profile_dir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-default-apps",
+    ]
+    print(f"🚀 启动 CDP Chrome (profile: {cdp_profile_dir})")
+    global _chrome_process
+    _chrome_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    return True
+
+
 async def _ensure_chrome_cdp(port: int = CDP_PORT) -> bool:
     """Ensure Chrome is running with CDP enabled on the given port.
 
@@ -138,75 +222,14 @@ async def _ensure_chrome_cdp(port: int = CDP_PORT) -> bool:
     finally:
         sock.close()
 
-    # Need to launch Chrome with CDP
-    chrome_path = _find_chrome_executable()
-    if not chrome_path:
-        print("❌ 未找到系统 Chrome 浏览器")
-        return False
-
-    # Always use a dedicated CDP profile directory (NOT the default Chrome dir).
-    # macOS Chrome refuses to open the CDP port when using the default
-    # user-data-dir.
-    # However, we copy cookies from the real profile to the CDP profile
-    # to preserve login state.
-    cdp_profile_dir = str(Path.home() / ".fetch_article" / "chrome_cdp_profile")
-    os.makedirs(cdp_profile_dir, exist_ok=True)
-
-    # Copy cookies from the real Chrome profile to CDP profile if available
-    real_chrome_dir = _get_chrome_user_data_dir()
-    real_cookies = Path(real_chrome_dir) / "Default" / "Cookies"
-    cdp_cookies = Path(cdp_profile_dir) / "Default" / "Cookies"
-    if real_cookies.exists():
-        os.makedirs(str(cdp_cookies.parent), exist_ok=True)
-        try:
-            shutil.copy2(str(real_cookies), str(cdp_cookies))
-            print(f"🍪 已同步真实 Chrome 的 cookies 到 CDP profile")
-        except Exception as e:
-            print(f"⚠️  Cookies 同步失败: {e}")
-
-    cmd = [
-        chrome_path,
-        f"--remote-debugging-port={port}",
-        f"--user-data-dir={cdp_profile_dir}",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-default-apps",
-        "--disable-popup-blocking",
-        "--disable-translate",
-        "--window-size=1440,900",
-    ]
-
-    # Auto-detect proxy
-    proxy = (
-        os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
-        or os.environ.get("http_proxy") or os.environ.get("HTTP_PROXY")
-    )
-    if not proxy and platform.system() == "Darwin":
-        for proxy_cmd in ["getsecurewebproxy", "getwebproxy"]:
-            try:
-                result = subprocess.run(
-                    ["networksetup", f"-{proxy_cmd}", "Wi-Fi"],
-                    capture_output=True, text=True, timeout=5,
-                )
-                enabled = server = port_str = ""
-                for line in result.stdout.splitlines():
-                    if line.startswith("Enabled: Yes"):
-                        enabled = True
-                    elif line.startswith("Server:"):
-                        server = line.split(":", 1)[1].strip()
-                    elif line.startswith("Port:"):
-                        port_str = line.split(":", 1)[1].strip()
-                if enabled and server and port_str:
-                    proxy = f"http://{server}:{port_str}"
-                    break
-            except Exception:
-                pass
-    if proxy:
-        cmd.append(f"--proxy-server={proxy}")
-        print(f"🌐 使用代理: {proxy}")
-
-    print(f"🚀 启动 Chrome CDP (profile: {cdp_profile_dir})")
-    _chrome_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    # Prefer start-cdp-chrome.sh / open -a so Chrome survives Agent shell exit.
+    start_script = Path.home() / ".fetch_article" / "start-cdp-chrome.sh"
+    if start_script.exists():
+        print(f"🚀 调用 {start_script} 启动 CDP Chrome...")
+        subprocess.run(["bash", str(start_script)], check=False)
+    else:
+        if not _launch_cdp_chrome_via_open(port):
+            return False
 
     # Wait for CDP port
     for _ in range(30):
@@ -233,28 +256,46 @@ async def _ensure_chrome_cdp(port: int = CDP_PORT) -> bool:
     return False
 
 
-async def _create_cdp_context(playwright):
-    """Connect to real Chrome via CDP and return (browser, context, page).
-    
-    Falls back to Playwright's bundled Chromium with Chrome cookie injection
-    if CDP connection fails (e.g., Chrome 147+ removed setDownloadBehavior).
+async def _create_cdp_context(playwright, strict_cdp: bool = False):
+    """Connect to CDP Chrome on port 9222 and return (browser, context, page).
+
+    When strict_cdp=True (--cdp flag), never fall back to Playwright's bundled
+    'Google Chrome for Testing' (no login state). Re-raise on failure instead.
     """
-    # Try CDP first
+    os.environ.setdefault("PW_CHROMIUM_DISABLE_DOWNLOAD_BEHAVIOR", "1")
+
     launched = await _ensure_chrome_cdp(CDP_PORT)
     if launched:
+        _cdp_ensure_seed_tab(CDP_PORT)
         try:
-            browser = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
+            browser = await playwright.chromium.connect_over_cdp(
+                f"http://127.0.0.1:{CDP_PORT}"
+            )
             if browser.contexts:
                 context = browser.contexts[0]
-                print("🔗 已连接到真实 Chrome（复用已有上下文）")
+                print("🔗 已连接到 CDP Chrome（复用已有上下文，将新开标签页抓取）")
             else:
                 context = await browser.new_context(viewport={"width": 1440, "height": 900})
-                print("🔗 已连接到真实 Chrome（新建上下文）")
+                print("🔗 已连接到 CDP Chrome（新建上下文）")
             page = await context.new_page()
             return browser, context, page
         except Exception as e:
-            print(f"⚠️  CDP 连接失败: {str(e)[:100]}")
+            print(f"⚠️  CDP 连接失败: {str(e)[:200]}")
+            if strict_cdp:
+                raise RuntimeError(
+                    "CDP 连接失败，已禁止回退到 Playwright Testing Chrome（无登录态）。\n"
+                    "请确认：① CDP Chrome 在 9222 端口运行（~/.fetch_article/start-cdp-chrome.sh）\n"
+                    "② 在 CDP Chrome 窗口（非日常 Chrome）中登录目标网站\n"
+                    f"原始错误: {e}"
+                ) from e
             print("🔄 回退到 Playwright Chromium + Chrome Cookie 注入模式...")
+
+    if strict_cdp:
+        raise RuntimeError(
+            "无法启动或连接 CDP Chrome（端口 9222）。\n"
+            "请先运行: ~/.fetch_article/start-cdp-chrome.sh\n"
+            "然后在 CDP Chrome 窗口中登录目标网站后再重试。"
+        )
 
     # Fallback: use Playwright's bundled Chromium with cookie injection
     browser = await playwright.chromium.launch(
@@ -1348,7 +1389,7 @@ async def fetch_article(
     if use_cdp:
         print("🔗 使用 CDP 模式连接真实 Chrome...")
         async with async_playwright() as p:
-            browser, context, page = await _create_cdp_context(p)
+            browser, context, page = await _create_cdp_context(p, strict_cdp=True)
 
             # Try to find existing tab with the target URL/domain, avoid re-navigation
             target_page = None

@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "2.8.2"
+version: "2.8.3"
 author: ajaxhe
 license: MIT
 category: research
@@ -74,6 +74,37 @@ Step 5: 📝 自省（有问题则更新 lessons-learned.md）
 - 无图片 + 无付费墙 → 可用 WebFetch 内容直接导入
 - 有付费墙 → `fetch_article.py --cdp`
 
+**0d. CDP Chrome 预检（🚨 付费/登录墙文章必做）**
+
+付费文章抓取前，Agent **必须先**确认 CDP Chrome 可用，**禁止**直接运行 fetch 后静默回退到 Testing Chrome：
+
+```bash
+# 1. 检测 CDP Chrome 是否在 9222 端口运行
+curl -s http://127.0.0.1:9222/json/version
+
+# 2. 若失败 → 用 start-cdp-chrome.sh 启动（经 open -a，不受 Shell 生命周期影响）
+~/.fetch_article/start-cdp-chrome.sh
+
+# 3. 确认后再抓取（脚本会在 CDP Chrome 中新开标签页，不会启动第二个 Chrome）
+python3 scripts/fetch_article.py fetch "<URL>" --output-dir <目录> --cdp
+```
+
+**🚨 三个 Chrome 实例，不要混淆**：
+
+| 实例 | 识别方式 | 登录态 | Agent 行为 |
+|------|----------|--------|------------|
+| **日常 Chrome** | Dock 图标，无 `--remote-debugging-port` | 你的主账号 | ❌ 不能用于 CDP 抓取（macOS 限制） |
+| **CDP Chrome** | `9222` 端口 + profile `~/.fetch_article/chrome_cdp_profile` | 抓取专用，需在此窗口登录付费站 | ✅ **复用此进程，只新开 tab** |
+| **Testing Chrome** | 应用名 `Google Chrome for Testing`（Playwright 内置） | 空白，无登录 | ❌ **禁止**用于付费文章（旧版脚本会在 CDP 失败时静默回退到此） |
+
+**关键机制**：
+- macOS 不允许日常 Chrome 同时开 CDP 端口，所以抓取必须用独立 CDP Profile
+- 脚本检测到 `9222` 已监听 → **只连接、不开新 Chrome**，通过 `context.new_page()` 新开标签页
+- CDP Chrome 若**零标签页**，Playwright 会连接失败 → v2.8.3 起脚本自动创建种子 tab 修复
+- `--cdp` 模式下连接失败 → **报错退出**，不再静默回退到 Testing Chrome
+
+**首次使用某付费站**：在 **CDP Chrome 窗口**（不是日常 Chrome）登录一次，登录态永久保留在 `chrome_cdp_profile`。
+
 ## Step 1：素材收集（抓取方式决策树）
 
 根据 URL 类型选择抓取方式（按优先级）：
@@ -102,41 +133,45 @@ python3 scripts/fetch_article.py fetch "<URL>" --output-dir <项目子目录> --
 
 **CDP 模式说明**：
 
-脚本会**自动**完成 Chrome 启动与 Cookie 同步，无需手动操作：
-1. 检测 `127.0.0.1:9222` 是否已有 Chrome 运行 → 有则直接复用
-2. 没有则自动启动 Chrome，使用永久 CDP Profile：`~/.fetch_article/chrome_cdp_profile`
-3. 自动将用户日常 Chrome 的 Cookies 同步到 CDP Profile（大多数已登录网站无需重新登录）
+> 🚨 **Agent 必读**：付费/登录墙文章抓取时，**先确认 9222 端口**（见 Step 0d），再运行 `--cdp`。脚本会**复用已有 CDP Chrome 进程并在其中新开标签页**，不会启动第二个 Chrome。若看到 `Google Chrome for Testing` 弹出，说明 CDP 连接失败——立即停止，检查 CDP Chrome 而非继续抓取。
+
+脚本连接逻辑（v2.8.3）：
+1. 检测 `127.0.0.1:9222` 是否已有 CDP Chrome → **有则直接连接，只新开 tab**
+2. 没有 → 调用 `~/.fetch_article/start-cdp-chrome.sh`（经 `open -a` 启动，不受 Shell 退出影响）
+3. 连接前自动创建种子标签页（修复「零 tab 时 connect_over_cdp 失败」）
+4. `--cdp` 模式连接失败 → **报错退出**，禁止回退到 Playwright Testing Chrome
 
 **永久 CDP Profile 设计原则**：
 
 ```
 日常 Chrome                        CDP Chrome（抓取专用）
 ~/Library/.../Chrome/Default       ~/.fetch_article/chrome_cdp_profile
-（历史、书签、密码）                （独立 Profile，脚本自动管理）
+（历史、书签、密码）                （独立 Profile，登录态永久保留）
                                             ↑
-                                   每次启动前自动同步日常 Chrome Cookies
+                              付费站首次登录请在此窗口完成（非日常 Chrome）
 ```
 
 - 两个 Chrome 可同时运行，**互不影响**
 - CDP Profile 是永久目录（非 `/tmp`），登录状态跨会话保留
-- 付费网站（如 SemiAnalysis）首次在 CDP Chrome 中手动登录一次，后续永久复用
+- Cookie 同步只能复制部分登录态；Substack 等站建议直接在 CDP Chrome 窗口登录
 
-**手动启动 CDP Chrome（当脚本无法自动启动时）**：
+**手动启动 CDP Chrome（推荐，Agent 优先用此方式）**：
 
-> 在 Cursor 环境中，Agent 的 Shell 进程结束时子进程会被一并终止。遇到此情况，用以下命令通过 macOS Launch Services 启动（完全独立于 Shell 生命周期）：
+> 在 Cursor 环境中，Agent 的 Shell 子进程会在 Shell 结束时被终止。**禁止**依赖脚本内 `subprocess.Popen` 启动 Chrome。应使用以下方式（完全独立于 Shell 生命周期）：
 
 ```bash
-# 使用永久 CDP Profile（不会丢失登录状态）
+# 推荐：快捷脚本（内部用 open -a 启动）
+~/.fetch_article/start-cdp-chrome.sh
+
+# 或手动等效命令
 open -a "Google Chrome" --args \
   --remote-debugging-port=9222 \
   --user-data-dir="$HOME/.fetch_article/chrome_cdp_profile" \
   --no-first-run --no-default-browser-check
-
-# 或使用快捷脚本
-~/.fetch_article/start-cdp-chrome.sh
 ```
 
 > 🚫 **禁止**使用 `/tmp/chrome-cdp-profile`（临时目录，重启后登录状态全失）
+> 🚫 **禁止**在 CDP 失败时接受 Playwright `Google Chrome for Testing` 作为替代（无登录态，会反复要求登录）
 
 **产出物**：
 - `<项目子目录>/<标题>.md` — Markdown 正文

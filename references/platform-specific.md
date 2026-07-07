@@ -53,17 +53,20 @@ mcp__lexiang__file_create_hyperlink(
 3. **DOM 结构特殊**：正文容器使用 `.iget-articles` 类名，不在 `fetch_article.py` 的默认选择器列表（`article`、`.post-content` 等）中。通用 `article` 选择器只匹配到极少内容（~167 字符），而真正的正文在 `.iget-articles` 中有 6000+ 字符
 4. **内容区混杂**：正文容器中混入了标题重复、音频时长、"划重点"、用户评论等非正文内容，需要清理
 
-**抓取方案**：使用 **CDP 模式**连接已登录得到的 Chrome 浏览器：
+**抓取方案**：使用 **CDP 模式**连接 CDP Chrome（9222 端口）：
 
 ```bash
-# 前提：用户已在 Chrome 中登录得到 APP 且有文章阅读权限
+# 前提：CDP Chrome 在运行，且用户已在 CDP Chrome 窗口（非日常 Chrome）登录得到
+curl -s http://127.0.0.1:9222/json/version   # 预检
+~/.fetch_article/start-cdp-chrome.sh          # 若未运行
 python scripts/fetch_article.py fetch "https://www.dedao.cn/course/article?id=<ID>" --output-dir <目录> --cdp
 ```
 
 **已知限制**：
 - `fetch_article.py` 的通用内容提取逻辑对得到 DOM 结构匹配不佳，**抓取结果可能不完整**
-- **CDP 连接可能失败**（2026-06-20 验证）：`connect_over_cdp` 在某些 Chrome 版本（如 149.0.7827.116）上报 "Browser context management is not supported" 错误。此时 `fetch_article.py` 会自动回退到 Playwright Chromium + Cookie 注入模式，但该模式无法访问已登录的得到会话，提取内容会不完整（~3500 字符 vs 完整 ~6000+ 字符）
-- **WebFetch 降级方案**：当 CDP 失败且 fetch_article.py 回退模式提取不完整时，可直接用 `WebFetch` 工具获取部分文章文本（约 2500 字符），再手动组合 `article.md`（文本 + `![](images/xxx)` 图片引用）。虽然 WebFetch 也受 SPA 限制无法获取全文，但配合手动补全可作为最终兜底方案
+- **CDP 零标签页陷阱**（2026-07-07 修复）：CDP Chrome 所有 tab 关闭时 `connect_over_cdp` 失败；v2.8.3 起自动创建种子 tab。旧版会静默回退到 `Google Chrome for Testing`（无登录态）
+- **CDP 连接失败**：`--cdp` 模式下 v2.8.3 起禁止回退到 Testing Chrome，应修复 CDP 环境（见 SKILL.md Step 0d）后重试
+- **WebFetch 降级方案**：当 CDP 完全不可用时，可直接用 `WebFetch` 工具获取部分文章文本（约 2500 字符），再手动组合 `article.md`（文本 + `![](images/xxx)` 图片引用）。虽然 WebFetch 也受 SPA 限制无法获取全文，但配合手动补全可作为最终兜底方案
 - 正确做法是通过 Playwright CDP 连接后，**手动指定 `.iget-articles` 选择器**提取正文：
 
 ```python

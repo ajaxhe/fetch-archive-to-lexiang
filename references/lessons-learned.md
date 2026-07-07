@@ -26,6 +26,23 @@
   4. **回报方式**：向用户说明"这是 X 类问题，我已全文排查到 N 处并全部修复"，而非只说"这一处修好了"。
 - **自检项**：用户就同一类问题开口 ≥2 次时，本轮交付必须包含：①全文同类清单 ②全部实例已修 ③skill 已自动更新。三者缺一即未完成。
 
+#### L023: CDP 连接失败静默回退到「Google Chrome for Testing」导致反复登录（2026-07-07, 用户反馈）
+- **背景**：用户已单独启动 CDP Chrome（9222 端口），但 Agent 抓取时仍弹出 `Google Chrome for Testing`（Playwright 内置浏览器），无登录态，需频繁重新登录。
+- **根因（三层）**：
+  1. **零标签页陷阱**：CDP Chrome 若所有 tab 已关闭（`/json/list` 为空），Playwright `connect_over_cdp` 报 `Browser context management is not supported`，脚本静默回退到 Testing Chrome。
+  2. **静默回退**：`fetch_article.py` 在 CDP 失败时自动启动 Playwright Chromium（应用名 `Google Chrome for Testing`），skill 未明确禁止此行为，Agent 不干预。
+  3. **Skill 表述误导**：只说「检测 9222 → 复用」，未说明「复用 = 连接已有进程 + 新开 tab」，也未区分日常 Chrome / CDP Chrome / Testing Chrome 三个实例；Agent 不知道 CDP 失败时不应继续。
+- **正确做法（强制）**：
+  1. **付费/登录墙抓取前预检**：`curl -s http://127.0.0.1:9222/json/version`；失败则先 `~/.fetch_article/start-cdp-chrome.sh`。
+  2. **复用 CDP 进程**：9222 已监听 → 脚本 `connect_over_cdp` + `context.new_page()` 新开 tab，**不启动第二个 Chrome**。
+  3. **种子 tab**：连接前检查 `/json/list`，无 page target 则 `PUT /json/new?about:blank`。
+  4. **`--cdp` 禁止回退**：连接失败报错退出，不启动 Testing Chrome。
+  5. **登录位置**：付费站首次登录在 **CDP Chrome 窗口**（`chrome_cdp_profile`），不是日常 Chrome。
+  6. **启动方式**：用 `start-cdp-chrome.sh`（`open -a`），不用 Shell 子进程 `Popen`（Shell 结束即 Chrome 被杀）。
+- **识别 Testing Chrome**：macOS 应用名 `Google Chrome for Testing`，来自 `~/.cache/ms-playwright/chromium-*`，**无登录态**。
+- **自检项**：抓取付费文章时，若弹出 Testing Chrome 或要求重新登录 → 立即停止，检查 9222 + CDP Chrome 登录态。
+- **同步更新**：SKILL.md v2.8.3 Step 0d + CDP 说明；`fetch_article.py` 种子 tab + strict_cdp + open 启动。
+
 #### L001: 图片遗漏（2026-06-04, 2026-06-15 多次发生）
 - **问题**：使用 `WebFetch` 抓取文章后直接翻译上传，完全忽略了原文中的配图
 - **根因**：Agent 走了「省事路径」——WebFetch 返回纯文本，Agent 没有意识到原文有图片就直接进入翻译和上传流程
@@ -241,6 +258,7 @@
 | 2026-06-24 | 用户指出样式化表格图未转表格块、原图也没展示 | 识别"图=表/卡片"→ block_convert_content_to_blocks 一步建原生表格块 + 原图并存 + 按 id 批删旧段落（L019） | pdf-processing.md, lessons-learned.md |
 | 2026-06-24 | 用户指出又一张卡片被拍平+`$^{19}$` 乱码，并要求"同类问题反复=自动反思" | 【元规则】同类问题第 2 次被指出即判系统性问题，主动全文同类排查+一次性全修+自动更新 skill（L020）；并清理全文 `$^{N}$` LaTeX 残留→Unicode 上标、补修 2.4x/Three actions 卡片为原图+原生表格 | SKILL.md, pdf-processing.md, lessons-learned.md |
 | 2026-06-24 | 用户要求播客 shownotes 置于逐字稿前 | Show Notes 自动抓取 + `## 节目介绍` 区块；YouTube description 同理（L021） | podcast_to_lexiang.py, yt_download_transcribe.py, podcast-audio.md, SKILL.md 2.8.0 |
+| 2026-07-07 | 用户反馈 Agent 启动 Testing Chrome 无登录态、不复用已有 CDP Chrome | 零 tab 致 connect_over_cdp 失败 + 静默回退 Testing Chrome；新增 Step 0d 三 Chrome 区分 + 种子 tab + strict_cdp（L023） | SKILL.md v2.8.3, fetch_article.py, lessons-learned.md |
 | 2026-07-06 | 沙箱转存 Substack 踩三坑：Chromium 装不上 / token 文件过期 / MCP 响应结构不符 | curl+html2text 抓正文、日志取最新 token、objects[0].upload_url + 列表枚举 index（L022） | lessons-learned.md |
 
 ---
