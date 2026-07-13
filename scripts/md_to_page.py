@@ -37,6 +37,21 @@ def call_mcp_tool(base_url, company_from, token, tool_name, arguments):
         except: continue
     return {}
 
+def sanitize_text_segment(md_text, is_first=False):
+    """Prepare a markdown text chunk for Lexiang import.
+
+    When md_to_page splits at images, append segments often start with ``---``.
+    Lexiang's ``entry_import_content_to_entry`` append mode then fails to parse
+    the first ``##`` heading in that chunk as a heading block (it becomes a
+    literal paragraph starting with ``##``).
+    """
+    text = md_text.strip()
+    if not is_first:
+        # Strip leading horizontal rules that land at image-split boundaries.
+        text = re.sub(r"^(?:---\s*\n+)+", "", text)
+    return text
+
+
 def import_content(base_url, cf, token, entry_id, md_text, force_write=False):
     # 直接传原始 markdown，不做 base64（MCP HTTP 直连时 base64 不会被自动解码）
     return call_mcp_tool(base_url, cf, token, "entry_import_content_to_entry", {
@@ -184,6 +199,7 @@ def main():
     first = True
     for i, (seg_type, seg_content) in enumerate(final):
         if seg_type == "text":
+            seg_content = sanitize_text_segment(seg_content, is_first=first)
             print(f"  [{i}] text ({len(seg_content)} chars)...", end=" ")
             import_content(base, cf, tok, entry_id, seg_content, force_write=first)
             first = False

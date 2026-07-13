@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "2.8.3"
+version: "2.8.4"
 author: ajaxhe
 license: MIT
 category: research
@@ -503,6 +503,7 @@ python3 -c "import json; d=json.load(open('$HOME/.cursor/mcp.json')); print(d['m
 □ 3. 图片完整：原文有 N 张图 → 乐享文档中有 N 张图（用 block_list_block_children 验证 image block 存在且有 file_id）
 □ 3b. 【PDF】归档侧对账：本地 md 的 `![` 引用数 == 线上 image block 数（与 pdf-rich-translate 的「PDF 图表数 == 本地 ![ 数」凑成三方对账）
 □ 4. 图片位置：用 block_fetch_page(render_mode="clean") 检查每张图片是否在正确的段落之间（不是聚集在页面底部或嵌套在引用块内）；每个图注块后须紧跟一张图
+□ 4c. 【标题块】抽查图文分段边界（图后第一个 `##`/`###`）：必须是 h2/h3 block，**不能**是含字面量 `##` 的普通段落（见 L024）
 □ 4b. 【PDF】标注已渲染成专有块：`> [!stat]`/`> [!definition]` → callout 块；样式化表 → 原图 + 原生表格块（见 pdf-processing.md Step 3）
 □ 4d. 【元规则·同类排查】若用户就同一类问题开口 ≥2 次（哪怕实例不同）→ 不许只修被指那一个；必须把问题抽象成特征、全文扫描所有同类实例、一次性全修，并在本轮自动更新 skill（L020）
 □ 5. 翻译完整：非中文文章已翻译为中英对照，无遗漏段落

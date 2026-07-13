@@ -26,6 +26,20 @@
   4. **回报方式**：向用户说明"这是 X 类问题，我已全文排查到 N 处并全部修复"，而非只说"这一处修好了"。
 - **自检项**：用户就同一类问题开口 ≥2 次时，本轮交付必须包含：①全文同类清单 ②全部实例已修 ③skill 已自动更新。三者缺一即未完成。
 
+#### L024: 图后追加段以 `---` 开头 → 紧随的 `##` 标题无法解析为 heading block（2026-07-13, 用户反馈）
+- **背景**：PDF 双语包转存乐享后，`## Introduction / 引言` 在编辑器中显示为字面量 `## Introduction / 引言` 普通段落，而非二级标题。同文档内 `## Methods`、`### Shield Mass Analysis` 等标题正常。
+- **根因（两层）**：
+  1. **`md_to_page.py` 按图片切分文本段**：图 `fig_toc_graphic.png` 后的追加段以 `---\n\n## Introduction` 开头。
+  2. **乐享 `entry_import_content_to_entry` append 模式缺陷**：追加段**段首**的 `---` 分隔线会导致紧随其后的第一个 `##` 无法被解析为 heading block，整段 Introduction 内容（含字面量 `##`）被合并为一个 `p` 块。段内后续 `##`/`###` 不受影响。
+- **与 pdf-rich-translate 的关系**：pdf-rich-translate 用 `---` 作章节分隔，当分隔线恰好落在图片切分边界时触发此 bug。标题 markdown 本身无误。
+- **正确做法**：
+  1. **pdf-rich-translate**：章节间只用空行分隔，**禁止**在 `##`/`###` 标题前写 `---`。
+  2. **`md_to_page.py`**：追加段（非首段）导入前 `strip` 段首 `---`（`sanitize_text_segment()`，v2.8.4+）。
+  3. **归档自检**：图后第一个标题必须是 `h2`/`h3` block，不能是含 `##` 字面量的 `p` block。
+  4. **线上修复**：删错误 `p` 块 → `block_convert_content_to_blocks` 转正确 markdown → `block_create_block_descendant` 插入。
+- **自检项**：交付后 `block_list_block_children` 检查是否存在 `block_type==p` 且文本以 `## ` 开头的块。
+- **同步更新**：`md_to_page.py` sanitize_text_segment；pdf-rich-translate SKILL Step 7；本文件。
+
 #### L023: CDP 连接失败静默回退到「Google Chrome for Testing」导致反复登录（2026-07-07, 用户反馈）
 - **背景**：用户已单独启动 CDP Chrome（9222 端口），但 Agent 抓取时仍弹出 `Google Chrome for Testing`（Playwright 内置浏览器），无登录态，需频繁重新登录。
 - **根因（三层）**：
@@ -258,6 +272,7 @@
 | 2026-06-24 | 用户指出样式化表格图未转表格块、原图也没展示 | 识别"图=表/卡片"→ block_convert_content_to_blocks 一步建原生表格块 + 原图并存 + 按 id 批删旧段落（L019） | pdf-processing.md, lessons-learned.md |
 | 2026-06-24 | 用户指出又一张卡片被拍平+`$^{19}$` 乱码，并要求"同类问题反复=自动反思" | 【元规则】同类问题第 2 次被指出即判系统性问题，主动全文同类排查+一次性全修+自动更新 skill（L020）；并清理全文 `$^{N}$` LaTeX 残留→Unicode 上标、补修 2.4x/Three actions 卡片为原图+原生表格 | SKILL.md, pdf-processing.md, lessons-learned.md |
 | 2026-06-24 | 用户要求播客 shownotes 置于逐字稿前 | Show Notes 自动抓取 + `## 节目介绍` 区块；YouTube description 同理（L021） | podcast_to_lexiang.py, yt_download_transcribe.py, podcast-audio.md, SKILL.md 2.8.0 |
+| 2026-07-13 | 用户反馈 Introduction 未渲染为二级标题 | 图后追加段段首 `---` 导致 `##` 无法解析；md_to_page sanitize + pdf-rich-translate 禁 `---`（L024） | md_to_page.py, pdf-rich-translate SKILL, lessons-learned.md |
 | 2026-07-07 | 用户反馈 Agent 启动 Testing Chrome 无登录态、不复用已有 CDP Chrome | 零 tab 致 connect_over_cdp 失败 + 静默回退 Testing Chrome；新增 Step 0d 三 Chrome 区分 + 种子 tab + strict_cdp（L023） | SKILL.md v2.8.3, fetch_article.py, lessons-learned.md |
 | 2026-07-06 | 沙箱转存 Substack 踩三坑：Chromium 装不上 / token 文件过期 / MCP 响应结构不符 | curl+html2text 抓正文、日志取最新 token、objects[0].upload_url + 列表枚举 index（L022） | lessons-learned.md |
 
