@@ -8,6 +8,18 @@
 
 > 🔀 **拆分提示（2026-06-24）**：PDF「提取/裁剪/翻译/富元素识别」类教训（L007 提取、L008 标题、L010 目录、L011 层级、L012 表格、L014 页眉、L015 嵌套、L016 统计卡、L017 多列、L018 图表完整性、L019 样式化表、L020 的脚注上标/识别部分）已迁移并整合进 **`pdf-rich-translate`** skill 的 lessons-learned。
 > 下列教训保留作历史与**乐享渲染**参考（如何把识别结果建成 callout/原生表格块）；提取/识别的最新做法以 `pdf-rich-translate` 为准。L020 元规则（同类问题反复→全文同类排查+自动反思）对本 skill 同样适用。
+>
+> 🔀 **上传层拆分（2026-07-15）**：Markdown 页面上传已统一迁移到
+> `upload-markdown-to-lexiang`。下文出现的 `md_to_page.py`、`LEXIANG_TOKEN`、
+> MCP Direct HTTP Call 仅用于解释历史根因，不再是现行执行方案。
+>
+> 🔀 **v4 内容加工拆分（2026-07-15）**：`pdf-rich-translate` 是旧 Skill 名称，
+> 现行名称为 `trans-doc-to-md`。下文出现的 Gemini/OpenAI 内置翻译、
+> `translate_gemini.py`、`entry_import_content`、MCP 三步 Markdown 上传、预签名
+> Markdown file 和上传后常规 MCP 富元素二次渲染均为历史事实，**已经废弃**。
+> 现行流程是：标准工作包 → `trans-doc-to-md` Prepared Markdown Package
+> 模式 → `upload-markdown-to-lexiang` 直接渲染并写入页面。仅少量异常人工维护可做
+> block 增量修复，且必须同步本地 Markdown。
 
 ## 📋 教训索引（按严重性排序）
 
@@ -34,13 +46,13 @@
 - **与 pdf-rich-translate 的关系**：pdf-rich-translate 用 `---` 作章节分隔，当分隔线恰好落在图片切分边界时触发此 bug。标题 markdown 本身无误。
 - **正确做法**：
   1. **pdf-rich-translate**：章节间只用空行分隔，**禁止**在 `##`/`###` 标题前写 `---`。
-  2. **`md_to_page.py`**：追加段（非首段）导入前 `strip` 段首 `---`（`sanitize_text_segment()`，v2.8.4+）。
+  2. **公共上传器**：追加段（非首段）导入前处理段首 `---`；相关修复和测试只进入 `upload-markdown-to-lexiang`。
   3. **归档自检**：图后第一个标题必须是 `h2`/`h3` block，不能是含 `##` 字面量的 `p` block。
   4. **线上修复**：删错误 `p` 块 → `block_convert_content_to_blocks` 转正确 markdown → `block_create_block_descendant` 插入。
 - **自检项**：交付后 `block_list_block_children` 检查是否存在 `block_type==p` 且文本以 `## ` 开头的块。
-- **同步更新**：`md_to_page.py` sanitize_text_segment；pdf-rich-translate SKILL Step 7；本文件。
+- **同步更新**：公共上传器；pdf-rich-translate SKILL Step 7；本文件。
 
-#### L023: CDP 连接失败静默回退到「Google Chrome for Testing」导致反复登录（2026-07-07, 用户反馈）
+#### L023: CDP 连接失败静默回退到「Google Chrome for Testing」导致反复登录（2026-07-07；2026-07-15 再次反馈）
 - **背景**：用户已单独启动 CDP Chrome（9222 端口），但 Agent 抓取时仍弹出 `Google Chrome for Testing`（Playwright 内置浏览器），无登录态，需频繁重新登录。
 - **根因（三层）**：
   1. **零标签页陷阱**：CDP Chrome 若所有 tab 已关闭（`/json/list` 为空），Playwright `connect_over_cdp` 报 `Browser context management is not supported`，脚本静默回退到 Testing Chrome。
@@ -56,6 +68,21 @@
 - **识别 Testing Chrome**：macOS 应用名 `Google Chrome for Testing`，来自 `~/.cache/ms-playwright/chromium-*`，**无登录态**。
 - **自检项**：抓取付费文章时，若弹出 Testing Chrome 或要求重新登录 → 立即停止，检查 9222 + CDP Chrome 登录态。
 - **同步更新**：SKILL.md v2.8.3 Step 0d + CDP 说明；`fetch_article.py` 种子 tab + strict_cdp + open 启动。
+- **2026-07-15 系统性复发与修正**：
+  1. 复发原因不是 strict CDP 失效，而是 CLI 默认值仍是 `use_cdp=False`；只有命中有限的
+     Substack 域名白名单或显式 `--cdp` 才走 CDP。`a16z.news` 是 Substack 自定义域名，
+     因而落入 cookie-injection 分支并启动 Testing Chrome。
+  2. 已全文排查所有浏览器入口：网页 `fetch`、Substack `login`、登录引导和图片格式转换。
+     `fetch` 与 `login` 统一默认 CDP；仅无登录态需求的 SVG headless 渲染或用户显式
+     `--no-cdp` 才允许隔离 Playwright。
+  3. CLI 现默认 `use_cdp=True`，新增显式 `--no-cdp`；补充 `a16z.news` 识别；CDP
+     零标签页先创建种子 tab 并复用，禁止再开启 Testing Chrome。
+  4. 若 9222 被 Ardot 等非 Google Chrome 进程占用且 Playwright 无法暴露 page target，
+     `start-cdp-chrome.sh` 必须自动选择 9223–9232 的空闲端口，用 `open -na` 启动独立
+     Google Chrome，并把端口写入 `~/.fetch_article/cdp_port`；不能误报成“未登录”，
+     更不能静默回退。
+- **新增自检**：每次网页抓取日志必须出现“使用 CDP 模式”“已连接到 CDP Chrome”；
+  若出现 `Google Chrome for Testing` 即判失败。
 
 #### L001: 图片遗漏（2026-06-04, 2026-06-15 多次发生）
 - **问题**：使用 `WebFetch` 抓取文章后直接翻译上传，完全忽略了原文中的配图
@@ -64,7 +91,7 @@
   1. 抓取前先用 WebFetch 快速扫描原文，**明确记录图片数量**
   2. 如果有图片 → **必须**用 `fetch_article.py` 抓取（下载图片到 images/）
   3. 如果 `fetch_article.py` 因沙箱限制无法运行 → 手动用 curl 下载每张图片
-  4. 上传时必须用 `md_to_page.py` 或 MCP 三步图片上传流程
+  4. 上传时必须调用 `upload-markdown-to-lexiang`
   5. **禁止**在有图片的文章中使用 `entry_import_content` 纯文本导入
 - **自检项**：上传完成后，用 `block_list_block_children` 检查是否存在 `block_type: "image"` 且有 `file_id` 的 block
 
@@ -211,9 +238,33 @@
 - **自检项**：播客/视频归档后，打开文字稿确认「节目介绍/视频介绍」在逐字稿之前且含摘要/时间线。
 - **同步更新**：podcast_to_lexiang.py, yt_download_transcribe.py, podcast-audio.md, youtube-video.md, SKILL.md v2.8.0
 
-#### L009: 翻译默认用当前模型，Gemini 改为备选
+#### L009: 翻译默认用当前模型，Gemini 改为备选（历史方案，v4 已废弃）
 - **背景**：用户要求默认用运行 skill 的大模型翻译。
-- **正确做法**：🥇 默认 Agent（当前模型）逐块翻译；🥈 仅当用户**明确要求**用 Gemini **且**提供 `GEMINI_API_KEY` 时才用 `translate_gemini.py`。用 gemini 脚本时务必校验是否有分块翻译失败（脚本失败会静默保留英文原文），发现未翻译区段需补译。
+- **历史做法**：当时默认 Agent（当前模型）逐块翻译，Gemini 仅作备选。
+- **v4 现行做法**：本 Skill 不执行任何翻译；所有非中文 Markdown 交给
+  `trans-doc-to-md` Prepared Markdown Package 模式，公共翻译 Skill 保持唯一实现。
+
+#### L025: 上传后立即读取存在短暂不一致；编号 blockquote 的序号可能不进入正文（2026-07-15，自检发现）
+- **问题**：图文文章全部写入后，公共 uploader 首次线上对账偶发缺少 1–3 个长段落锚点；其中 `> 1.` / `> 2.` 形式的编号 blockquote 在线上 clean 渲染中会丢掉序号，造成稳定的锚点差异。
+- **根因**：①乐享页面写入后的读取存在短暂最终一致性；② Markdown 编号列表嵌套在 blockquote 中时，序号属于列表结构，不一定保留为正文文本。
+- **正确做法**：① uploader 的只读对账增加指数退避重试，不重复写页面；②需要作为正文保留的亮点序号写成 `> **亮点一：**` 等显式文本，不使用 `> 1.`；③对账错误必须输出缺失锚点预览，以便区分短暂一致性与稳定渲染差异；④最终仍须 `verified == true` 且图片数量一致。
+- **已修复**：`upload-markdown-to-lexiang` v1.1.1 增加对账重试和缺失锚点预览，并补充单元测试。
+
+#### L026: Substack 正文容器混入元信息、订阅组件和法律说明（2026-07-15，用户反馈）
+- **问题**：抓取结果顶部混入头像、`Discover more` 和重复作者日期；底部混入相关推荐、
+  订阅横幅、newsletter disclaimer 与缩略图；通用 `[class*="date"]` 还误取到错误日期。
+- **根因**：把 `.available-content` 的最大文本容器整体当正文；过滤只覆盖
+  `subscription/footer` 少数 class，没有按稳定文本标记和祖先区域过滤；日期选择器过宽。
+- **正确做法**：
+  1. Substack 转 Markdown 和图片枚举共用噪音判定，过滤 subscribe/subscription/
+     recommend/related/post-footer/disclaimer 祖先，以及 `Discover more from`、
+     `Subscribe for more from`、newsletter disclaimer 文本区域。
+  2. 作者与发布日期只在文档顶部展示一次；日期优先 canonical
+     `article:published_time`、`time[datetime]`、JSON-LD `datePublished`，禁止用宽泛
+     `[class*="date"]`。
+  3. `meta.json.images` 只记录最终 Markdown 实际引用的正文图片，订阅横幅和推荐缩略图
+     不得进入工作包。
+- **自检**：全文搜索上述噪音标记必须归零；本地图片逐张预览，正文图片数与线上图片数一致。
 
 ### 🟢 P2 — 已修复的小问题（备忘）
 
