@@ -34,13 +34,18 @@ Show Notes 必须在逐字稿之前：
 
 ## 逐字稿
 
-**[00:00]** …
+> 说明：下文按说话人分段。**主播名** 为主播，**嘉宾名** 为嘉宾。
+
+**[00:00] 主播名：** …
+**[01:20] 嘉宾名：** …
 ```
 
 - 小宇宙优先从 `__NEXT_DATA__.episode.description` 提取。
 - 外部 `metadata.json.shownotes` 优先于自动抓取。
 - 无 `chapters.json` 时，从 Show Notes 的时间线提取章节。
 - 节目级 footer 会被截断。
+- 默认启用 FunASR `cam++` 说话人分离；同一说话人连续发言合并为一段。
+- `metadata.json` 提供 `host` / `guest` 时写入姓名标签；可用 `--no-speakers` 关闭。
 
 ## 输出
 

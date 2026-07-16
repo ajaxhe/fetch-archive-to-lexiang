@@ -226,6 +226,18 @@
 - **与 L012/L017 区别**：L012/L017 讲数据表/多列信息图重建为 HTML `<table>`；本条强调**主动识别"图=表/卡片"** + 用 `block_convert_content_to_blocks` 一步生成原生表格块 + **原图与表格块并存**。
 - **同步更新**：pdf-processing.md Step 4；本文件。
 
+#### L027: 播客逐字稿须同说话人合并 + 主播/嘉宾标注（2026-07-16, 用户反馈）
+- **背景**：晚点聊 MiniMax 闫俊杰期归档后，用户指出：①按句号切得过碎，同一人连续发言被拆成多段；②无法区分主持人和嘉宾。
+- **根因**：`split_by_punctuation` 按句末标点切段，未做说话人分离；Markdown 只输出时间戳。
+- **正确做法**：
+  1. 默认启用 FunASR `spk_model=cam++`，优先使用 `sentence_info`。
+  2. 跨 chunk 的本地 spk id 会重置，需按口吻打分映射为 `host`/`guest`（问句/「你们」偏主播，「我们公司」偏嘉宾；开场白强制主播；开场与正式对话强制断段）。
+  3. `merge_by_speaker`：同一 `role` 且间隔 ≤3s、总长 ≤1000 字则合并。
+  4. 输出格式：`**[mm:ss] 姓名：** 正文`；`metadata.host`/`guest` 提供姓名。
+  5. `--no-speakers` 可回退到旧切句模式。
+- **自检项**：开场白为少数大段；对话区主播问句与嘉宾长答交替；姓名标签正确。
+- **同步更新**：`podcast_to_lexiang.py`、`podcast-audio.md`、本文件。
+
 #### L021: 播客/视频文字稿须含 Show Notes，置于逐字稿之前（2026-06-24, 用户反馈）
 - **背景**：厚雪长波转存后，文字稿直接从 ASR 逐字内容开始，缺少节目介绍、嘉宾摘要、本期剧透时间线——而这些 shownotes 信息密度远高于逐字稿开头。
 - **根因**：`podcast_to_lexiang.py` 只输出元信息 blockquote + 逐字稿；Agent 用 WebFetch 抓到的 shownotes 未写入 metadata，脚本也未自动从页面抓取。

@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.1.0"
+version: "4.1.1"
 author: ajaxhe
 license: MIT
 category: research
@@ -164,6 +164,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ 文档目录、去重结果和 VOD 媒体目录正确
 □ 人工增量修复已同步本地最终 Markdown
 □ 浏览器抓取复用了 CDP 上下文；未启动 Google Chrome for Testing
+□ 播客：同说话人已合并；主播/嘉宾有姓名标签；开场白未与第一问粘连
 ```
 
 ## Step 5：自省

@@ -263,21 +263,161 @@ def prepare_audio(audio_path: Path, output_dir: Path, chunk_seconds: int = 600) 
 # ============================================================
 # 3. ASR 转录（FunASR 分片 + 热词 + 标点切分）
 # ============================================================
-def transcribe(chunk_files: list[Path], hotwords: str = "", chunk_seconds: int = 600) -> list[dict]:
-    """逐片段转录，带热词增强和标点切分。
+def _host_score(text: str) -> float:
+    t = (text or "").strip()
+    if not t:
+        return 0.0
+    score = 0.0
+    for m in ("你们", "你觉得", "你怎么", "你说的", "能不能", "为什么要",
+              "为什么没有", "我想问", "欢迎收听", "正式进入", "今天的主播"):
+        if m in t:
+            score += 2.0
+    t_wo = t.replace("对吧？", "").replace("对吧?", "")
+    if t_wo.endswith("？") or t_wo.endswith("?"):
+        score += 1.5 if len(t) < 40 else 0.5
+    return score
+
+
+def _guest_score(text: str) -> float:
+    t = (text or "").strip()
+    if not t:
+        return 0.0
+    score = 0.0
+    for m in ("我们公司", "我们模型", "我们团队", "我们发了", "我们做",
+              "对我们来说", "我们内部", "我们意识到", "坦白说"):
+        if m in t:
+            score += 2.0
+    if len(t) > 40:
+        score += 0.5
+    return score
+
+
+def remap_speaker_roles(sentences: list[dict], chunk_seconds: int = 600,
+                        intro_end: float | None = None) -> list[dict]:
+    """将 cam++ 本地 spk id 映射为 host/guest。
+
+    访谈播客跨 chunk 时 spk 编号会重置，需按口吻打分；开场白强制为主播。
+    """
+    if not sentences:
+        return sentences
+
+    if intro_end is None:
+        # 默认：含「正式进入」的句子结束处；否则取前 2 分钟
+        intro_end = 120.0
+        for s in sentences:
+            if "正式进入" in (s.get("text") or "") or "欢迎收听" in (s.get("text") or ""):
+                intro_end = max(intro_end, float(s.get("end") or 0))
+        intro_end = min(intro_end + 1.0, 180.0)
+
+    from collections import defaultdict
+    by_chunk: dict[int, list[dict]] = defaultdict(list)
+    for s in sentences:
+        by_chunk[int(float(s["start"]) // chunk_seconds)].append(s)
+
+    for ci, chunk in sorted(by_chunk.items()):
+        for s in chunk:
+            if float(s["start"]) < intro_end:
+                s["role"] = "host"
+        dialogue = [s for s in chunk if float(s["start"]) >= intro_end]
+        if not dialogue:
+            continue
+        spk_ids = sorted({int(s.get("spk", 0)) for s in dialogue})
+        if len(spk_ids) == 1:
+            text = "".join(x["text"] for x in dialogue)
+            role = "host" if _host_score(text) >= _guest_score(text) else "guest"
+            for s in dialogue:
+                s["role"] = role
+            continue
+        scores = {}
+        for sid in spk_ids:
+            segs = [x for x in dialogue if int(x.get("spk", 0)) == sid]
+            hs = sum(_host_score(x["text"]) for x in segs)
+            gs = sum(_guest_score(x["text"]) for x in segs)
+            q_short = sum(
+                1 for x in segs
+                if ("？" in x["text"] or "?" in x["text"])
+                and "对吧" not in x["text"]
+                and len(x["text"]) < 40
+            )
+            scores[sid] = hs - gs + q_short * 1.5
+        ranked = sorted(spk_ids, key=lambda sid: scores[sid], reverse=True)
+        host_sid = ranked[0]
+        host_spks = {host_sid}
+        if ci == 0:
+            host_spks |= {int(s.get("spk", 0)) for s in chunk if float(s["start"]) < intro_end}
+            if len(ranked) > 1 and scores[ranked[1]] > scores[ranked[0]] * 0.5:
+                t1 = "".join(x["text"] for x in dialogue if int(x.get("spk", 0)) == ranked[1])
+                if _host_score(t1) > _guest_score(t1):
+                    host_spks.add(ranked[1])
+        for s in dialogue:
+            s["role"] = "host" if int(s.get("spk", 0)) in host_spks else "guest"
+
+    for i, s in enumerate(sentences):
+        t = (s.get("text") or "").strip()
+        if i > 0 and t in {"嗯", "嗯嗯", "对", "对对", "对对对", "是", "是的", "啊", "哦"}:
+            s["role"] = sentences[i - 1].get("role", s.get("role"))
+    # 把 intro_end 挂到首段，供合并时强制断段
+    if sentences:
+        sentences[0]["_intro_end"] = intro_end
+    return sentences
+
+
+def merge_by_speaker(sentences: list[dict], max_chars: int = 1000,
+                     max_gap: float = 3.0) -> list[dict]:
+    """同一说话人连续发言合并为一段；说话人切换或跨开场/对话边界则新开段。"""
+    if not sentences:
+        return []
+    intro_end = float(sentences[0].get("_intro_end") or 0)
+    merged: list[dict] = []
+    cur = None
+    for s in sentences:
+        text = (s.get("text") or "").strip()
+        if not text or text in {"law，", "law,", "law"}:
+            continue
+        role = s.get("role") or "unknown"
+        start, end = float(s["start"]), float(s["end"])
+        if cur is None:
+            cur = {"role": role, "text": text, "start": start, "end": end,
+                   "spk": s.get("spk")}
+            continue
+        gap = start - cur["end"]
+        cross_intro = bool(intro_end) and cur["end"] <= intro_end < start
+        can_merge = (
+            role == cur["role"]
+            and gap <= max_gap
+            and len(cur["text"]) + len(text) <= max_chars
+            and not cross_intro
+        )
+        if can_merge:
+            cur["text"] += text
+            cur["end"] = end
+        else:
+            merged.append(cur)
+            cur = {"role": role, "text": text, "start": start, "end": end,
+                   "spk": s.get("spk")}
+    if cur:
+        merged.append(cur)
+    return merged
+
+
+def transcribe(chunk_files: list[Path], hotwords: str = "", chunk_seconds: int = 600,
+               with_speakers: bool = True) -> list[dict]:
+    """逐片段转录，带热词增强；默认启用 cam++ 说话人分离。
 
     关键经验：
     - 热词通过 generate(hotword="词1 词2") 传入（空格分隔）
     - 不能放在 AutoModel(hotword=file) 构造函数中（那是 contextual 模型专用）
     - merge_vad=True + merge_length_s=15 避免段落过碎
+    - 有 sentence_info 时优先用说话人句级结果，再按同说话人合并
     """
     print(f"\n{'='*60}")
-    print(f"[3/4] ASR 转录 (FunASR Paraformer + CT-Punc + 热词)")
+    mode = "Paraformer + CT-Punc + cam++" if with_speakers else "Paraformer + CT-Punc"
+    print(f"[3/4] ASR 转录 (FunASR {mode} + 热词)")
     print(f"{'='*60}", flush=True)
 
     from funasr import AutoModel
 
-    model = AutoModel(
+    model_kwargs = dict(
         model="paraformer-zh",
         model_revision="v2.0.4",
         vad_model="fsmn-vad",
@@ -286,6 +426,10 @@ def transcribe(chunk_files: list[Path], hotwords: str = "", chunk_seconds: int =
         device="cpu",
         disable_update=True,
     )
+    if with_speakers:
+        model_kwargs["spk_model"] = "cam++"
+
+    model = AutoModel(**model_kwargs)
 
     if hotwords:
         print(f"📌 热词: {hotwords[:80]}...")
@@ -314,6 +458,23 @@ def transcribe(chunk_files: list[Path], hotwords: str = "", chunk_seconds: int =
 
         chunk_segs = []
         for item in res:
+            info = item.get("sentence_info") or []
+            if with_speakers and info:
+                for sent in info:
+                    text = (sent.get("text") or sent.get("sentence") or "").strip()
+                    if not text:
+                        continue
+                    start = sent.get("start", 0)
+                    end = sent.get("end", 0)
+                    if start > 1000 or end > 1000:
+                        start, end = start / 1000.0, end / 1000.0
+                    chunk_segs.append({
+                        "text": text,
+                        "start": float(start),
+                        "end": float(end),
+                        "spk": int(sent.get("spk", 0)),
+                    })
+                continue
             text = item.get("text", "")
             timestamps = item.get("timestamp", [])
             if not text.strip():
@@ -323,7 +484,6 @@ def transcribe(chunk_files: list[Path], hotwords: str = "", chunk_seconds: int =
             else:
                 chunk_segs.append({"text": text, "start": 0, "end": 0})
 
-        # 加时间偏移
         for seg in chunk_segs:
             seg["start"] += total_offset
             seg["end"] += total_offset
@@ -334,6 +494,13 @@ def transcribe(chunk_files: list[Path], hotwords: str = "", chunk_seconds: int =
 
     elapsed = time.time() - start_time
     print(f"\n✅ 转录完成: {len(all_segments)} 段, 总用时 {elapsed:.0f}s")
+
+    if with_speakers and any("spk" in s for s in all_segments):
+        before = len(all_segments)
+        remap_speaker_roles(all_segments, chunk_seconds=chunk_seconds)
+        all_segments = merge_by_speaker(all_segments)
+        print(f"📌 同说话人合并: {before} → {len(all_segments)} 段")
+
     return all_segments
 
 
@@ -441,7 +608,11 @@ def generate_markdown(segments: list[dict], title: str, metadata: dict,
         lines.append(f"> 发布日期：{metadata['date']} | 时长：{metadata.get('duration', '')}")
     if metadata.get("url"):
         lines.append(f"> 原始链接：{metadata['url']}")
-    lines.append(f"> 转录工具：FunASR (Paraformer + CT-Punc) | 标点自动恢复\n")
+    has_roles = any(seg.get("role") in ("host", "guest") for seg in segments)
+    if has_roles:
+        lines.append("> 转录工具：FunASR (Paraformer + CT-Punc + cam++ 说话人分离) | 同说话人段落已合并\n")
+    else:
+        lines.append("> 转录工具：FunASR (Paraformer + CT-Punc) | 标点自动恢复\n")
     lines.append("---\n")
 
     shownotes = metadata.get("shownotes") or metadata.get("description") or ""
@@ -452,6 +623,25 @@ def generate_markdown(segments: list[dict], title: str, metadata: dict,
         print(f"📌 已插入节目介绍 ({len(trim_shownotes_boilerplate(shownotes))} 字符)")
 
     lines.append("## 逐字稿\n")
+
+    host_name = (metadata.get("host") or "").split("，")[0].split(",")[0].strip()
+    guest_name = (metadata.get("guest") or "").split("，")[0].split(",")[0].strip()
+    if has_roles and (host_name or guest_name):
+        lines.append(
+            f"> 说明：下文按说话人分段。"
+            f"{f'**{host_name}** 为主播，' if host_name else ''}"
+            f"{f'**{guest_name}** 为嘉宾。' if guest_name else ''}"
+            " 同一人连续发言已合并为一段。\n"
+        )
+
+    def format_seg_line(seg: dict) -> str:
+        ts = fmt_time(seg["start"])
+        role = seg.get("role")
+        if role == "host" and host_name:
+            return f"**[{ts}] {host_name}：** {seg['text']}\n"
+        if role == "guest" and guest_name:
+            return f"**[{ts}] {guest_name}：** {seg['text']}\n"
+        return f"**[{ts}]** {seg['text']}\n"
 
     # 插入章节标题
     if chapters:
@@ -466,10 +656,10 @@ def generate_markdown(segments: list[dict], title: str, metadata: dict,
                     chapter_idx += 1
                 else:
                     break
-            lines.append(f"**[{fmt_time(seg['start'])}]** {seg['text']}\n")
+            lines.append(format_seg_line(seg))
     else:
         for seg in segments:
-            lines.append(f"**[{fmt_time(seg['start'])}]** {seg['text']}\n")
+            lines.append(format_seg_line(seg))
 
     content = "\n".join(lines)
     print(f"✅ Markdown 生成完成: {len(segments)} 段, {len(content)} 字符")
@@ -488,13 +678,17 @@ def build_hotwords(args, metadata: dict, chapters: list | None) -> str:
                 return " ".join(line.split()[0] for line in f if line.strip())
         return args.hotwords
 
-    # 来源2: --hotwords-json
+    # 来源2: --hotwords-json（支持 list / {"hotwords": [...]}）
     if hasattr(args, 'hotwords_json') and args.hotwords_json and Path(args.hotwords_json).exists():
         with open(args.hotwords_json) as f:
-            hw_list = json.load(f)
+            hw_data = json.load(f)
+        if isinstance(hw_data, dict):
+            hw_list = hw_data.get("hotwords") or hw_data.get("words") or []
+        else:
+            hw_list = hw_data
         words = []
         for item in hw_list:
-            words.append(item["word"] if isinstance(item, dict) else item)
+            words.append(item["word"] if isinstance(item, dict) else str(item))
         return " ".join(words)
 
     # 来源3: 自动从 metadata + chapters 提取
@@ -532,6 +726,8 @@ def main():
     parser.add_argument("--shownotes-json", help="Show Notes JSON（含 shownotes 字段）或纯文本 .md")
     parser.add_argument("--skip-shownotes-fetch", action="store_true", help="跳过自动抓取 shownotes")
     parser.add_argument("--chunk-seconds", type=int, default=600, help="切片时长(秒)")
+    parser.add_argument("--no-speakers", action="store_true",
+                        help="禁用 cam++ 说话人分离与同说话人合并（默认开启）")
 
     args = parser.parse_args()
     output_dir = Path(args.output_dir)
@@ -582,8 +778,11 @@ def main():
     # Step 2: WAV + 切片
     wav_path, chunk_files = prepare_audio(audio_path, output_dir, args.chunk_seconds)
 
-    # Step 3: 转录
-    segments = transcribe(chunk_files, hotwords, args.chunk_seconds)
+    # Step 3: 转录（默认说话人分离 + 同说话人合并）
+    segments = transcribe(
+        chunk_files, hotwords, args.chunk_seconds,
+        with_speakers=not args.no_speakers,
+    )
 
     # 保存 segments
     segments_path = output_dir / "segments.json"
