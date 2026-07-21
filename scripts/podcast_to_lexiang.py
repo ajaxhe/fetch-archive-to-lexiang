@@ -3,7 +3,7 @@
 
 核心设计原则：
 - 所有操作固化在脚本中，Agent 只需准备 JSON 配置文件 + 一行命令调用
-- 长音频预切片 → 逐片段转录 → 按标点切分 → 章节对齐
+- 长音频预切片 → 逐片段转录 → 说话人分离与连续发言合并 → 章节对齐
 - 热词通过 generate(hotword="词1 词2") 传入，提升专有名词准确率
 - 本脚本不上传 Markdown 或媒体；归档编排分别调用 uploader 和 VOD 专用脚本
 
@@ -23,7 +23,7 @@
   1. FunASR 热词必须通过 generate(hotword="词1 词2") 传入，不能放 AutoModel 构造函数
   2. 长音频（>10分钟）必须预切片再逐片段转录，否则 FunASR 会合并为一整段
   3. 切片大小建议 600s（10分钟），ffmpeg -f segment -segment_time 600
-  4. FunASR 返回逐字 timestamp，需按标点符号切分为自然段落
+  4. 有 sentence_info 时以说话人切换为主边界；无说话人信息时才按标点切分
   5. 系统 Python (/usr/bin/python3) 可用，managed Python 的 torch 有 code signing 问题
   6. 脚本执行时间较长（139分钟音频约10分钟），建议 nohup 后台运行
 """
@@ -314,23 +314,36 @@ def remap_speaker_roles(sentences: list[dict], chunk_seconds: int = 600,
     for s in sentences:
         by_chunk[int(float(s["start"]) // chunk_seconds)].append(s)
 
-    for ci, chunk in sorted(by_chunk.items()):
-        for s in chunk:
-            if float(s["start"]) < intro_end:
-                s["role"] = "host"
-        dialogue = [s for s in chunk if float(s["start"]) >= intro_end]
-        if not dialogue:
+    first_chunk_index = min(by_chunk)
+    first_chunk = by_chunk[first_chunk_index]
+    intro_seed_end = min(intro_end, 45.0)
+    intro_durations: dict[int, float] = defaultdict(float)
+    for s in first_chunk:
+        if float(s["start"]) >= intro_seed_end:
             continue
-        spk_ids = sorted({int(s.get("spk", 0)) for s in dialogue})
+        sid = int(s.get("spk", 0))
+        intro_durations[sid] += max(0.0, float(s["end"]) - float(s["start"]))
+    intro_host_sid = (
+        max(intro_durations, key=intro_durations.get)
+        if intro_durations
+        else int(first_chunk[0].get("spk", 0))
+    )
+
+    for ci, chunk in sorted(by_chunk.items()):
+        spk_ids = sorted({int(s.get("spk", 0)) for s in chunk})
         if len(spk_ids) == 1:
-            text = "".join(x["text"] for x in dialogue)
-            role = "host" if _host_score(text) >= _guest_score(text) else "guest"
-            for s in dialogue:
+            text = "".join(x["text"] for x in chunk)
+            role = (
+                "host"
+                if ci == first_chunk_index and spk_ids[0] == intro_host_sid
+                else ("host" if _host_score(text) > _guest_score(text) else "guest")
+            )
+            for s in chunk:
                 s["role"] = role
             continue
         scores = {}
         for sid in spk_ids:
-            segs = [x for x in dialogue if int(x.get("spk", 0)) == sid]
+            segs = [x for x in chunk if int(x.get("spk", 0)) == sid]
             hs = sum(_host_score(x["text"]) for x in segs)
             gs = sum(_guest_score(x["text"]) for x in segs)
             q_short = sum(
@@ -340,30 +353,29 @@ def remap_speaker_roles(sentences: list[dict], chunk_seconds: int = 600,
                 and len(x["text"]) < 40
             )
             scores[sid] = hs - gs + q_short * 1.5
+        if ci == first_chunk_index:
+            scores[intro_host_sid] += 100.0
         ranked = sorted(spk_ids, key=lambda sid: scores[sid], reverse=True)
         host_sid = ranked[0]
         host_spks = {host_sid}
-        if ci == 0:
-            host_spks |= {int(s.get("spk", 0)) for s in chunk if float(s["start"]) < intro_end}
+        if ci == first_chunk_index:
             if len(ranked) > 1 and scores[ranked[1]] > scores[ranked[0]] * 0.5:
-                t1 = "".join(x["text"] for x in dialogue if int(x.get("spk", 0)) == ranked[1])
+                t1 = "".join(x["text"] for x in chunk if int(x.get("spk", 0)) == ranked[1])
                 if _host_score(t1) > _guest_score(t1):
                     host_spks.add(ranked[1])
-        for s in dialogue:
+        for s in chunk:
             s["role"] = "host" if int(s.get("spk", 0)) in host_spks else "guest"
 
-    for i, s in enumerate(sentences):
-        t = (s.get("text") or "").strip()
-        if i > 0 and t in {"嗯", "嗯嗯", "对", "对对", "对对对", "是", "是的", "啊", "哦"}:
-            s["role"] = sentences[i - 1].get("role", s.get("role"))
     # 把 intro_end 挂到首段，供合并时强制断段
     if sentences:
         sentences[0]["_intro_end"] = intro_end
     return sentences
 
 
-def merge_by_speaker(sentences: list[dict], max_chars: int = 1000,
-                     max_gap: float = 3.0) -> list[dict]:
+def merge_by_speaker(sentences: list[dict], max_chars: int = 1500,
+                     max_gap: float = 15.0, max_duration: float = 360.0,
+                     intro_max_chars: int = 1200,
+                     intro_max_duration: float = 180.0) -> list[dict]:
     """同一说话人连续发言合并为一段；说话人切换或跨开场/对话边界则新开段。"""
     if not sentences:
         return []
@@ -381,15 +393,32 @@ def merge_by_speaker(sentences: list[dict], max_chars: int = 1000,
                    "spk": s.get("spk")}
             continue
         gap = start - cur["end"]
-        cross_intro = bool(intro_end) and cur["end"] <= intro_end < start
+        cross_intro = bool(intro_end) and cur["start"] < intro_end <= start
+        in_intro = bool(intro_end) and cur["start"] < intro_end
+        char_limit = intro_max_chars if in_intro else max_chars
+        duration_limit = intro_max_duration if in_intro else max_duration
+        same_speaker = (
+            s.get("spk") == cur.get("spk")
+            if s.get("spk") is not None and cur.get("spk") is not None
+            else role == cur["role"]
+        )
         can_merge = (
-            role == cur["role"]
+            same_speaker
             and gap <= max_gap
-            and len(cur["text"]) + len(text) <= max_chars
+            and len(cur["text"]) + len(text) <= char_limit
+            and end - cur["start"] <= duration_limit
             and not cross_intro
         )
         if can_merge:
-            cur["text"] += text
+            needs_space = (
+                bool(cur["text"])
+                and bool(text)
+                and cur["text"][-1].isascii()
+                and cur["text"][-1].isalnum()
+                and text[0].isascii()
+                and text[0].isalnum()
+            )
+            cur["text"] += (" " if needs_space else "") + text
             cur["end"] = end
         else:
             merged.append(cur)
@@ -626,21 +655,22 @@ def generate_markdown(segments: list[dict], title: str, metadata: dict,
 
     host_name = (metadata.get("host") or "").split("，")[0].split(",")[0].strip()
     guest_name = (metadata.get("guest") or "").split("，")[0].split(",")[0].strip()
-    if has_roles and (host_name or guest_name):
+    host_label = host_name or "主持人"
+    guest_label = guest_name or "嘉宾"
+    if has_roles:
         lines.append(
             f"> 说明：下文按说话人分段。"
-            f"{f'**{host_name}** 为主播，' if host_name else ''}"
-            f"{f'**{guest_name}** 为嘉宾。' if guest_name else ''}"
-            " 同一人连续发言已合并为一段。\n"
+            f"**{host_label}** 为主持人，**{guest_label}** 为嘉宾。"
+            " 同一人连续发言（包括跨越短暂停顿）已合并为较大的自然段。\n"
         )
 
     def format_seg_line(seg: dict) -> str:
         ts = fmt_time(seg["start"])
         role = seg.get("role")
-        if role == "host" and host_name:
-            return f"**[{ts}] {host_name}：** {seg['text']}\n"
-        if role == "guest" and guest_name:
-            return f"**[{ts}] {guest_name}：** {seg['text']}\n"
+        if role == "host":
+            return f"**[{ts}] {host_label}：** {seg['text']}\n"
+        if role == "guest":
+            return f"**[{ts}] {guest_label}：** {seg['text']}\n"
         return f"**[{ts}]** {seg['text']}\n"
 
     # 插入章节标题

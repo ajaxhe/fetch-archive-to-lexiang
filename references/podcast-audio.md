@@ -44,8 +44,14 @@ Show Notes 必须在逐字稿之前：
 - 外部 `metadata.json.shownotes` 优先于自动抓取。
 - 无 `chapters.json` 时，从 Show Notes 的时间线提取章节。
 - 节目级 footer 会被截断。
-- 默认启用 FunASR `cam++` 说话人分离；同一说话人连续发言合并为一段。
-- `metadata.json` 提供 `host` / `guest` 时写入姓名标签；可用 `--no-speakers` 关闭。
+- 默认启用 FunASR `cam++` 说话人分离；同一说话人连续发言以及不超过 15 秒的短暂停顿
+  合并为较大的自然段。开场白按最多 1200 字或 180 秒分成少数大段；对话段按最多
+  1500 字或 360 秒控制，角色切换时立即断段。
+- 合并同时要求 `spk` 相同；多位嘉宾不能因为都映射为 `guest` 而合并成同一段。
+- 开场前 45 秒按累计发言时长识别主要主持人，不再把前两分钟所有声音强制标为主持人；
+  后续切片结合问句、发言长度和第一人称公司语料映射主持人/嘉宾角色。
+- `metadata.json` 提供 `host` / `guest` 时写入姓名；缺少姓名时也必须显示
+  “主持人”/“嘉宾”角色标签。可用 `--no-speakers` 关闭。
 
 ## 输出
 
@@ -94,6 +100,7 @@ python3 scripts/upload_video_via_openapi.py "<音频路径>" \
 
 - 长音频先切为 600 秒片段。
 - FunASR 热词传给 `generate(hotword="...")`。
-- 从逐字 timestamp 按标点切自然段。
+- 无说话人信息时才从逐字 timestamp 按标点切自然段；有 `sentence_info` 时以说话人
+  切换为主边界，并合并连续发言。
 - 转录任务可后台执行，但完成标志是 `source.md` 和 `meta.json` 同时存在。
 - torch code signing 失败时申请允许的沙箱外执行，不得静默降级为 Show Notes。

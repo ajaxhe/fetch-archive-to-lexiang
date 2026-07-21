@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 
 
-def check_dependencies():
+def check_dependencies(with_speakers: bool = True):
     """检查必要的依赖是否已安装"""
     missing = []
 
@@ -43,6 +43,12 @@ def check_dependencies():
         import whisper  # noqa: F401
     except ImportError:
         missing.append("openai-whisper (pip3 install openai-whisper)")
+
+    if with_speakers:
+        try:
+            import funasr  # noqa: F401
+        except ImportError:
+            missing.append("funasr (pip3 install 'funasr>=1.3.2')")
 
     # 检查 ffmpeg
     try:
@@ -212,6 +218,201 @@ def transcribe_audio(audio_path: str, model_name: str = "base") -> dict:
     return result
 
 
+def diarize_audio(audio_path: str) -> list[dict]:
+    """用 SenseVoiceSmall + CAM++ 获取多语言说话人时间区间。"""
+    from funasr import AutoModel
+    from funasr.utils.postprocess_utils import rich_transcription_postprocess
+
+    print("👥 使用 FunASR SenseVoiceSmall + CAM++ 分离说话人...")
+    model = AutoModel(
+        model="iic/SenseVoiceSmall",
+        vad_model="fsmn-vad",
+        vad_kwargs={"max_single_segment_time": 30000},
+        spk_model="cam++",
+        device="cpu",
+        disable_update=True,
+    )
+    result = model.generate(
+        input=audio_path,
+        cache={},
+        language="auto",
+        use_itn=True,
+        batch_size_s=60,
+        merge_vad=True,
+        merge_length_s=15,
+    )
+    sentences: list[dict] = []
+    for item in result:
+        for sent in item.get("sentence_info") or []:
+            start = float(sent.get("start") or 0)
+            end = float(sent.get("end") or 0)
+            if start > 1000 or end > 1000:
+                start, end = start / 1000.0, end / 1000.0
+            text = rich_transcription_postprocess(
+                (sent.get("text") or sent.get("sentence") or "").strip()
+            )
+            if text and end >= start:
+                sentences.append({
+                    "start": start,
+                    "end": end,
+                    "text": text,
+                    "spk": int(sent.get("spk", 0)),
+                })
+    if not sentences:
+        raise RuntimeError(
+            "CAM++ 未返回 sentence_info；请升级 funasr>=1.3.2，"
+            "或明确传 --no-speakers 使用无角色转录"
+        )
+    print(f"   ✅ 识别到 {len({s['spk'] for s in sentences})} 个说话人")
+    return sentences
+
+
+def assign_speakers_to_whisper_segments(
+    segments: list[dict], diarized: list[dict]
+) -> list[dict]:
+    """按时间重叠把 CAM++ 说话人标签映射到 Whisper 文本段。"""
+    assigned: list[dict] = []
+    previous_spk: int | None = None
+    for segment in segments:
+        start, end = float(segment["start"]), float(segment["end"])
+        overlap_by_speaker: dict[int, float] = {}
+        for turn in diarized:
+            overlap = max(0.0, min(end, turn["end"]) - max(start, turn["start"]))
+            if overlap:
+                sid = int(turn["spk"])
+                overlap_by_speaker[sid] = overlap_by_speaker.get(sid, 0.0) + overlap
+        if overlap_by_speaker:
+            spk = max(overlap_by_speaker, key=overlap_by_speaker.get)
+        else:
+            midpoint = (start + end) / 2
+            nearest = min(
+                diarized,
+                key=lambda turn: min(
+                    abs(midpoint - float(turn["start"])),
+                    abs(midpoint - float(turn["end"])),
+                ),
+            )
+            spk = int(nearest["spk"]) if nearest else (previous_spk or 0)
+        previous_spk = spk
+        assigned.append({
+            "start": start,
+            "end": end,
+            "text": (segment.get("text") or "").strip(),
+            "spk": spk,
+        })
+    return assigned
+
+
+def _host_score(text: str) -> float:
+    value = (text or "").casefold()
+    score = 0.0
+    for marker in (
+        "welcome to", "my guest", "today my guest", "thank you for being here",
+        "let's start", "help us understand", "what do you think", "why do you",
+        "how do you", "can you", "你觉得", "你们", "我想问", "欢迎",
+    ):
+        if marker in value:
+            score += 2.0
+    if value.rstrip().endswith(("?", "？")):
+        score += 1.5
+    return score
+
+
+def _guest_score(text: str) -> float:
+    value = (text or "").casefold()
+    score = 0.0
+    for marker in (
+        "at our company", "our team", "we built", "we found", "in our course",
+        "对我们来说", "我们公司", "我们团队", "我们做",
+    ):
+        if marker in value:
+            score += 2.0
+    if len(value) > 300:
+        score += 0.5
+    return score
+
+
+def assign_host_guest_roles(segments: list[dict], intro_seed_end: float = 45.0) -> list[dict]:
+    """把稳定的说话人 ID 映射为主持人/嘉宾角色。"""
+    if not segments:
+        return segments
+    from collections import defaultdict
+
+    by_speaker: dict[int, list[dict]] = defaultdict(list)
+    intro_durations: dict[int, float] = defaultdict(float)
+    for segment in segments:
+        sid = int(segment.get("spk", 0))
+        by_speaker[sid].append(segment)
+        if float(segment["start"]) < intro_seed_end:
+            intro_durations[sid] += max(
+                0.0,
+                min(float(segment["end"]), intro_seed_end) - float(segment["start"]),
+            )
+    intro_host = max(intro_durations, key=intro_durations.get) if intro_durations else None
+    scores: dict[int, float] = {}
+    for sid, items in by_speaker.items():
+        text = " ".join(item["text"] for item in items)
+        scores[sid] = _host_score(text) - _guest_score(text)
+        if sid == intro_host:
+            scores[sid] += 4.0
+    host_sid = max(scores, key=scores.get)
+    for segment in segments:
+        segment["role"] = "host" if int(segment.get("spk", 0)) == host_sid else "guest"
+    return segments
+
+
+def merge_by_speaker(
+    segments: list[dict],
+    max_gap: float = 15.0,
+    max_chars: int = 1800,
+    max_duration: float = 360.0,
+    intro_max_chars: int = 1400,
+    intro_max_duration: float = 180.0,
+) -> list[dict]:
+    """按真实说话人切换合并连续发言，短暂停顿不另起段。"""
+    if not segments:
+        return []
+    merged: list[dict] = []
+    current: dict | None = None
+    for segment in segments:
+        text = (segment.get("text") or "").strip()
+        if not text:
+            continue
+        item = {
+            "start": float(segment["start"]),
+            "end": float(segment["end"]),
+            "text": text,
+            "spk": segment.get("spk"),
+            "role": segment.get("role") or "unknown",
+        }
+        if current is None:
+            current = item
+            continue
+        in_intro = current["start"] < intro_max_duration
+        char_limit = intro_max_chars if in_intro else max_chars
+        duration_limit = intro_max_duration if in_intro else max_duration
+        same_speaker = (
+            current.get("spk") == item.get("spk")
+            if current.get("spk") is not None and item.get("spk") is not None
+            else current["role"] == item["role"]
+        )
+        can_merge = (
+            same_speaker
+            and item["start"] - current["end"] <= max_gap
+            and len(current["text"]) + len(text) <= char_limit
+            and item["end"] - current["start"] <= duration_limit
+        )
+        if can_merge:
+            current["text"] += " " + text
+            current["end"] = item["end"]
+        else:
+            merged.append(current)
+            current = item
+    if current:
+        merged.append(current)
+    return merged
+
+
 def format_timestamp(seconds: float) -> str:
     """将秒数转为 HH:MM:SS 格式"""
     hours = int(seconds // 3600)
@@ -302,9 +503,24 @@ def generate_markdown(video_info: dict, paragraphs: list,
                 lines.append("")
     lines.append("## 逐字稿")
     lines.append("")
+    has_roles = any(para.get("role") in ("host", "guest") for para in paragraphs)
+    host_label = (video_info.get("host") or "").strip() or "主持人"
+    guest_label = (video_info.get("guest") or "").strip() or "嘉宾"
+    if has_roles:
+        lines.append(
+            f"> 说明：下文按说话人分段。**{host_label}** 为主持人，"
+            f"**{guest_label}** 为嘉宾；同一人连续发言及短暂停顿已合并。"
+        )
+        lines.append("")
     for para in paragraphs:
         timestamp = format_timestamp(para["start"])
-        lines.append(f"**[{timestamp}]** {para['text']}")
+        role = para.get("role")
+        if role == "host":
+            lines.append(f"**[{timestamp}] {host_label}：** {para['text']}")
+        elif role == "guest":
+            lines.append(f"**[{timestamp}] {guest_label}：** {para['text']}")
+        else:
+            lines.append(f"**[{timestamp}]** {para['text']}")
         lines.append("")
 
     return "\n".join(lines)
@@ -328,6 +544,9 @@ def save_meta_json(video_info: dict, output_path: str,
         "view_count": video_info.get("view_count", 0),
         "like_count": video_info.get("like_count", 0),
         "paragraph_count": paragraph_count,
+        "host": video_info.get("host", ""),
+        "guest": video_info.get("guest", ""),
+        "speaker_diarization": video_info.get("speaker_diarization", False),
         "video_file": video_file,
         "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
@@ -366,6 +585,12 @@ def main():
         "--cookies-from-browser", default="chrome",
         help="从哪个浏览器获取 cookies（默认 chrome，设为空字符串禁用）"
     )
+    parser.add_argument("--host", help="主持人姓名；缺省时文字稿显示“主持人”")
+    parser.add_argument("--guest", help="嘉宾姓名；多位可用顿号分隔")
+    parser.add_argument(
+        "--no-speakers", action="store_true",
+        help="禁用 CAM++ 说话人分离；仅在非访谈内容或显式接受无角色文字稿时使用",
+    )
 
     args = parser.parse_args()
     if args.skip_translate:
@@ -375,13 +600,15 @@ def main():
     cookies_browser = args.cookies_from_browser if args.cookies_from_browser else None
 
     # 检查依赖
-    check_dependencies()
+    check_dependencies(with_speakers=not args.no_speakers)
 
     # 确保输出目录存在
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Step 1: 获取视频信息
     video_info = get_video_info(args.url, cookies_browser)
+    video_info["host"] = args.host or ""
+    video_info["guest"] = args.guest or ""
     safe_title = sanitize_filename(video_info["title"])
     print(f"   标题: {video_info['title']}")
     print(f"   频道: {video_info['channel']}")
@@ -415,8 +642,18 @@ def main():
     segments = result.get("segments", [])
     print()
 
-    # Step 5: 合并为段落
-    paragraphs = merge_segments_to_paragraphs(segments)
+    # Step 5: 说话人分离并按连续发言合并；显式关闭时才使用旧的停顿分段。
+    if args.no_speakers:
+        paragraphs = merge_segments_to_paragraphs(
+            segments, max_gap=15.0, max_duration=180.0
+        )
+        video_info["speaker_diarization"] = False
+    else:
+        diarized = diarize_audio(audio_file)
+        speaker_segments = assign_speakers_to_whisper_segments(segments, diarized)
+        assign_host_guest_roles(speaker_segments)
+        paragraphs = merge_by_speaker(speaker_segments)
+        video_info["speaker_diarization"] = True
     print(f"📝 合并为 {len(paragraphs)} 个段落")
     print()
 

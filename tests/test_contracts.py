@@ -21,7 +21,7 @@ def load_module(name: str, path: Path):
 class SkillContractTests(unittest.TestCase):
     def test_frontmatter_dependencies(self):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn('version: "4.1.0"', skill)
+        self.assertIn('version: "4.4.0"', skill)
         self.assertIn("name: trans-doc-to-md", skill)
         self.assertIn('version: ">=3.0.0,<4.0.0"', skill)
         self.assertIn("name: upload-markdown-to-lexiang", skill)
@@ -60,6 +60,54 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("Original transcript.", content)
         self.assertNotIn("\n---\n", content)
 
+    def test_youtube_maps_diarization_and_merges_continuous_speaker(self):
+        module = load_module("youtube_speaker_contract", SCRIPTS / "yt_download_transcribe.py")
+        whisper_segments = [
+            {"start": 0, "end": 20, "text": "Welcome to the show."},
+            {"start": 28, "end": 45, "text": "Today we discuss evals."},
+            {"start": 50, "end": 90, "text": "At our company we review traces."},
+            {"start": 98, "end": 130, "text": "We then build narrow judges."},
+        ]
+        diarized = [
+            {"start": 0, "end": 45, "spk": 0, "text": "host"},
+            {"start": 50, "end": 130, "spk": 1, "text": "guest"},
+        ]
+        assigned = module.assign_speakers_to_whisper_segments(
+            whisper_segments, diarized
+        )
+        module.assign_host_guest_roles(assigned)
+        merged = module.merge_by_speaker(assigned)
+        self.assertEqual(len(merged), 2)
+        self.assertEqual([item["role"] for item in merged], ["host", "guest"])
+        self.assertIn("Today we discuss evals", merged[0]["text"])
+        self.assertIn("narrow judges", merged[1]["text"])
+
+    def test_youtube_does_not_merge_different_guest_speakers(self):
+        module = load_module("youtube_multi_guest_contract", SCRIPTS / "yt_download_transcribe.py")
+        merged = module.merge_by_speaker([
+            {"start": 0, "end": 20, "text": "First answer.", "spk": 1, "role": "guest"},
+            {"start": 22, "end": 40, "text": "Second guest.", "spk": 2, "role": "guest"},
+        ])
+        self.assertEqual(len(merged), 2)
+
+    def test_youtube_anonymous_roles_still_have_labels(self):
+        module = load_module("youtube_labels_contract", SCRIPTS / "yt_download_transcribe.py")
+        content = module.generate_markdown(
+            {
+                "title": "Original Title",
+                "channel": "Channel",
+                "webpage_url": "https://example.com/video",
+                "description": "",
+            },
+            [
+                {"start": 0, "text": "Welcome.", "role": "host"},
+                {"start": 20, "text": "Thank you.", "role": "guest"},
+            ],
+            "en",
+        )
+        self.assertIn("**[00:00] 主持人：**", content)
+        self.assertIn("**[00:20] 嘉宾：**", content)
+
     def test_podcast_markdown_is_source_only(self):
         module = load_module("podcast_contract", SCRIPTS / "podcast_to_lexiang.py")
         content = module.generate_markdown(
@@ -69,6 +117,56 @@ class SkillContractTests(unittest.TestCase):
             language="zh",
         )
         self.assertLess(content.index("## 节目介绍"), content.index("## 逐字稿"))
+
+    def test_podcast_merges_continuous_speaker_across_short_pauses(self):
+        module = load_module("podcast_merge_contract", SCRIPTS / "podcast_to_lexiang.py")
+        segments = [
+            {"start": 0, "end": 20, "text": "欢迎收听。", "role": "host", "_intro_end": 45},
+            {"start": 30, "end": 45, "text": "今天我们聊评估系统。", "role": "host"},
+            {"start": 50, "end": 100, "text": "我们公司是这样做的。", "role": "guest"},
+            {"start": 108, "end": 150, "text": "这里还有第二点。", "role": "guest"},
+        ]
+        merged = module.merge_by_speaker(segments)
+        self.assertEqual(len(merged), 2)
+        self.assertEqual([item["role"] for item in merged], ["host", "guest"])
+        self.assertIn("今天我们聊评估系统", merged[0]["text"])
+        self.assertIn("这里还有第二点", merged[1]["text"])
+
+    def test_podcast_does_not_merge_different_guest_speakers(self):
+        module = load_module("podcast_multi_guest_contract", SCRIPTS / "podcast_to_lexiang.py")
+        segments = [
+            {"start": 0, "end": 20, "text": "第一位嘉宾。", "role": "guest", "spk": 1},
+            {"start": 22, "end": 40, "text": "第二位嘉宾。", "role": "guest", "spk": 2},
+        ]
+        self.assertEqual(len(module.merge_by_speaker(segments)), 2)
+
+    def test_podcast_intro_does_not_force_early_guest_to_host(self):
+        module = load_module("podcast_roles_contract", SCRIPTS / "podcast_to_lexiang.py")
+        segments = [
+            {"start": 0, "end": 25, "text": "欢迎收听，今天我们请到一位嘉宾。", "spk": 0},
+            {"start": 30, "end": 40, "text": "谢谢邀请。", "spk": 1},
+            {"start": 45, "end": 100, "text": "我们公司内部是这样推进评估的。", "spk": 1},
+            {"start": 105, "end": 115, "text": "你们为什么这样设计？", "spk": 0},
+        ]
+        module.remap_speaker_roles(segments, intro_end=120)
+        self.assertEqual(segments[0]["role"], "host")
+        self.assertEqual(segments[1]["role"], "guest")
+        self.assertEqual(segments[2]["role"], "guest")
+        self.assertEqual(segments[3]["role"], "host")
+
+    def test_podcast_anonymous_roles_still_have_labels(self):
+        module = load_module("podcast_labels_contract", SCRIPTS / "podcast_to_lexiang.py")
+        content = module.generate_markdown(
+            [
+                {"start": 0, "text": "欢迎收听。", "role": "host"},
+                {"start": 20, "text": "谢谢邀请。", "role": "guest"},
+            ],
+            "原文标题",
+            {"url": "https://example.com/podcast"},
+            language="zh",
+        )
+        self.assertIn("**[00:00] 主持人：**", content)
+        self.assertIn("**[00:20] 嘉宾：**", content)
 
     def test_article_standard_paths_and_metadata(self):
         article = (SCRIPTS / "fetch_article.py").read_text(encoding="utf-8")

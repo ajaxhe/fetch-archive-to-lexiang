@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.1.1"
+version: "4.4.0"
 author: ajaxhe
 license: MIT
 category: research
@@ -20,6 +20,7 @@ requires:
     - playwright
     - pymupdf
     - openai-whisper
+    - funasr>=1.3.2
 ---
 
 # 抓取来源并编排乐享归档
@@ -67,6 +68,7 @@ requires:
 ```json
 {
   "title": "归档标题",
+  "display_title": "原文标题 / 中文标题",
   "source_url": "https://...",
   "source_title": "原文标题",
   "source_type": "article|youtube|podcast|pdf",
@@ -124,19 +126,26 @@ requires:
    `before=<当前第一条目 ID>` 置顶。
 3. 视频/播客在日期目录下查询并复用 `<原文标题>` 文件夹。
 4. 在目标目录内按规范化标题、来源 URL 和条目类型去重；确认是同一来源后才覆盖。
-5. 调用 uploader：
+5. 上传前记录目标目录子条目快照；本次任务只允许新增或更新“最终 Markdown 页面 +
+   VOD 媒体”各一条。诊断上传必须使用 `--dry-run`，禁止创建 `upload test`、`v2`、
+   `中英对照`等试验条目。
+6. 调用 uploader：
 
 ```bash
 python3 "<uploader-root>/scripts/lexiang_upload.py" upload \
   "<work-dir>/<原文标题>.md" \
   --parent-id "<目标目录ID>" \
-  --name "<原文标题>" \
+  --name "<meta.display_title；中文来源回退 meta.title>" \
   --pin \
   --json
 ```
 
 uploader 版本必须满足 `>=1.1.0,<2.0.0`。它直接渲染
 `trans-doc-to-md` 的 callout、表格和图片标注，并完成线上对账。
+
+非中文来源发布时禁止追加“中英对照”“双语版”等机械后缀。页面名称必须直接使用
+`trans-doc-to-md` 生成的 `meta.json.display_title`，格式为
+`Original Title / 中文标题`；最终 Markdown 不得保留与页面名称重复的文档级 H1。
 
 视频/音频在 Markdown 上传成功后独立归档：
 
@@ -149,6 +158,15 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 
 音频使用 `--media-type audio`。不得用普通文件上传替代 VOD。
 
+访谈类 YouTube 和播客默认启用说话人分离。YouTube 使用 Whisper 保留文本质量，
+同时用 SenseVoiceSmall + CAM++ 提供说话人时间区间，再按时间重叠映射并合并：
+
+- 说话人切换是首要段落边界；同一人跨不超过 15 秒的停顿继续合并。
+- 开场白按最多 1400 字符或 180 秒形成少数大段；对话段最多 1800 字符或 360 秒。
+- 有姓名显示姓名；缺少姓名也必须显示“主持人”/“嘉宾”。
+- 多位嘉宾不能仅因都属于 `guest` 就合并；合并必须同时保持同一 `spk`。
+- 只有非访谈内容或用户明确接受无角色文字稿时才使用 `--no-speakers`。
+
 ## Step 4：交付自检
 
 ```text
@@ -159,12 +177,19 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ 订阅引导、相关推荐、newsletter disclaimer、页脚图片等平台噪音已在抓取转 MD 时过滤
 □ 非中文包已通过 trans-doc-to-md 完整性验证
 □ 最终文件名为原文标题
+□ 非中文页面名为“原文标题 / 中文标题”，没有“中英对照”等机械后缀
+□ 最终 Markdown 与线上正文均不含和页面名称重复的首个文档级 H1
 □ uploader verified == true，local_images == remote_images
 □ 富元素由 uploader 直接渲染，无常规 MCP 二次渲染
 □ 文档目录、去重结果和 VOD 媒体目录正确
 □ 人工增量修复已同步本地最终 Markdown
 □ 浏览器抓取复用了 CDP 上下文；未启动 Google Chrome for Testing
-□ 播客：同说话人已合并；主播/嘉宾有姓名标签；开场白未与第一问粘连
+□ 播客：同说话人连续发言与短暂停顿已合并为大段；开场白只有少数大段
+□ 播客：每段明确标注“主持人/嘉宾”（有姓名则用姓名）；开场白未与第一问粘连
+□ 访谈视频：CAM++ 说话人区间已映射到 Whisper 文本；连续同一 spk 已合并
+□ 访谈视频：主持人/嘉宾标签完整；多位嘉宾没有因同属 guest 被误合并
+□ 新建页面上传失败时已自动回滚，不在日期目录或知识库留下临时空页面
+□ 上传后目标目录与上传前快照对账，仅保留最终页面和 VOD；无 test/v2/空白/重复条目
 ```
 
 ## Step 5：自省

@@ -1140,7 +1140,7 @@ async def _extract_and_save(
             }
         }
         if (!articleEl) {
-            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article'];
+            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '#quarto-document-content', 'main'];
             let maxLen = 0;
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
@@ -1274,7 +1274,7 @@ async def _extract_and_save(
             articleEl = document.querySelector('.u-rich-text-blog') || document.querySelector('.w-richtext');
         }
         if (!articleEl) {
-            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article'];
+            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '#quarto-document-content', 'main'];
             let maxLen = 0;
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
@@ -1378,7 +1378,7 @@ async def _extract_and_save(
                     if (text && href && !href.startsWith('javascript:')) {
                         return '[' + text + '](' + href + ')';
                     }
-                    return text;
+                    return text || children();
                 }
                 case 'img': {
                     const src = node.src || node.getAttribute('data-src') || '';
@@ -1410,7 +1410,9 @@ async def _extract_and_save(
                     let s = '\\n';
                     rows.forEach((row, ri) => {
                         const cells = row.querySelectorAll('td, th');
-                        const texts = Array.from(cells).map(c => c.innerText.trim().replace(/\\n/g, ' '));
+                        const texts = Array.from(cells).map(c =>
+                            processNode(c, listDepth).trim().replace(/\\n+/g, '<br>')
+                        );
                         s += '| ' + texts.join(' | ') + ' |\\n';
                         if (ri === 0) s += '| ' + texts.map(() => '---').join(' | ') + ' |\\n';
                     });
