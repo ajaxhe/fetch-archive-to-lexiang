@@ -1,22 +1,26 @@
 ### 微信公众号文章处理（mp.weixin.qq.com）
 
-**首选方案：乐享 MCP `file_create_hyperlink`（2026-05-09 验证 ✅）**
+**强制方案：乐享 MCP `file_create_hyperlink`**
 
 乐享后端原生支持微信公众号文章的抓取与解析，**一步到位**，无需本地抓取和手动上传图片。
+URL host 一旦识别为 `mp.weixin.qq.com`，必须直接进入此分支；禁止先用 WebFetch、
+Playwright/CDP、浏览器或 `fetch_article.py` 侦察/抓取正文。
 
 ```
-mcp__lexiang__file_create_hyperlink(
+file_create_hyperlink(
   url = "https://mp.weixin.qq.com/s/...",
   parent_entry_id = "<目标目录 entry_id>",
-  name = "<文章标题>"  // 可选，不传会自动从微信提取
+  name = "<文章标题>"  // 可选；仅在已可靠获知时传，不得为取标题而抓取
 )
 ```
 
+当前 MCP schema 只要求 `url` 与目标 `parent_entry_id`；不要编造或额外传入 schema
+中不存在的 `space_id`。调用前仍须按主流程完成目标目录定位和 URL/标题去重。
+
 **返回值**：
-- `finished: true` — 后端抓取完成
-- `entry.id` — 新创建的知识条目 ID
-- `entry_type: "flink"` — 外部链接类型
-- `extension: "wechat"` — 自动识别微信来源
+- `entry.id` — 必须存在，作为导入成功的硬条件
+- 若响应暴露相关字段，再确认 `entry_type: "flink"`、`extension: "wechat"`
+- 若响应含 `finished`，其值必须为 `true`
 
 **后端自动完成的事情**：
 1. 抓取微信文章全文（正文 + 图片）
@@ -32,16 +36,20 @@ mcp__lexiang__file_create_hyperlink(
 
 **如需附加用户评价/评论**：
 - 优先使用乐享评论能力。
-- 若必须修改页面内容，仅作为少量人工增量维护，并同步本地 Markdown。
+- 不得把原生微信条目改造成 Markdown page，也不得再用 block/uploader 覆盖正文。
 
-**降级方案（当 `file_create_hyperlink` 失败时）**：
-- 如果返回 `finished: false` 或错误码，改用 `fetch_article.py` 本地抓取 + 降级方案 A 导入
-- 某些被限制的微信文章（如已删除、需付费等）可能无法通过此接口抓取
+**失败处理**：
+- 工具不可用、返回错误、`finished: false` 或缺少 `entry.id` 时，报告错误并停止。
+- 禁止静默回退到 `fetch_article.py`、WebFetch、Playwright/CDP、通用 Markdown 导入或
+  uploader；某些已删除、受限或需付费的文章可能无法导入，应保留失败事实。
 
 **注意事项**：
 - 产出的 entry_type 是 `flink`（外部链接），而非 `page`（在线文档）
 - flink 类型在乐享中以原始文章格式展示，支持全文检索和 AI 解析
-- 如果用户明确要求以「在线文档/page」格式存储（需要后续编辑），才使用 fetch_article.py 降级方案
+- 微信公众号归档请求统一保留原生 `flink/wechat` 形态；即使提到在线查看或后续检索，
+  也不能误判为需要 Markdown page
+- 此分支不生成 `source.md`、`images/`、`meta.json`，不调用 `trans-doc-to-md` 或
+  `upload-markdown-to-lexiang`
 
 ### 得到 APP 文章抓取（dedao.cn）
 

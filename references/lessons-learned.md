@@ -150,6 +150,74 @@
 
 ### 🟡 P1 — 偶尔犯的错误（需要注意）
 
+#### L036: 抓取正确性必须在脚本内一次验收；固定等待、串行图片和默认截图拖慢流程（2026-07-23，用户要求复盘优化）
+- **问题**：同一篇 Lenny/Substack 文章因标题、正文容器和图片问题连续重抓 5 次；
+  每次抓取还固定等待、串行下载图片并生成调试截图。错误直到翻译/上传阶段才暴露，既耗时，
+  又迫使 Agent 反复读取全文，放大 Token 消耗。
+- **根因**：
+  1. 抓取脚本只负责“产出文件”，没有对标题来源、平台噪音和图片三方一致性做硬验收。
+  2. 动态页面使用 `networkidle + 固定 sleep`，等待了与正文无关的持续网络请求。
+  3. 图片逐张下载，调试截图在正常路径也默认执行。
+  4. `meta.json` 没有紧凑验证报告，Agent 只能读取整篇 `source.md` 人工复核。
+- **正确做法**：
+  1. Substack 使用 `domcontentloaded` 后按 `.available-content` 文本长度定向等待；保留
+     Cloudflare 和登录墙检查，不用盲目缩短安全等待。
+  2. 正文图片用 `asyncio.gather` 并行下载，但最终 `meta.images` 仍按 Markdown 出现顺序
+     确定，不能按下载完成顺序。
+  3. 调试截图默认关闭，仅 `--debug-screenshot` 显式启用。
+  4. 写工作包前硬校验：噪音标记归零、每个本地图片引用存在；在
+     `meta.json.verification` 写入 source SHA-256、引用数、唯一图片数、缺图数和噪音命中。
+  5. `verification.ok=true` 后，Agent 只读紧凑 meta 报告即可完成抓取层自检；翻译层仍按
+     `trans-doc-to-md` 要求读取并处理全文，不能用报告替代正文。
+- **效果**：同 URL 优化后一次成功，基准抓取 13.12 秒；相对修复前最后一次 17.79 秒
+  缩短约 26%，相对首次 24.14 秒缩短约 46%。更大的收益是避免 4 次无效重抓和全文复读。
+- **自检项**：新工作包必须有 `verification.ok=true`、`missing_local_images=0`、
+  `platform_noise_hits=[]`，且 source/最终 meta 图片顺序稳定。
+
+#### L035: 乐享页面名称最多 150 字符；超长双语标题只缩短展示名（2026-07-23，自检发现）
+- **问题**：完整英文播客标题包含嘉宾与课程说明，再拼接中文译名后超过乐享
+  `name` 的 150 字符限制；本地 dry-run 未发现，创建页面时服务端拒绝。
+- **根因**：归档层只检查了双语命名格式，没有在远程写入前验证乐享页面名称长度；
+  同时把稳定的源标题/文件名与受平台限制的展示名混为一谈。
+- **正确做法**：上传前检查 `meta.display_title` 长度；超限时仅缩短展示名，保留
+  “核心英文标题 / 核心中文标题”，删除嘉宾括注等次要信息。`meta.title`、
+  `source_title` 和最终 Markdown 文件名继续保留完整原题，去重仍按完整原题和来源 URL。
+- **自检项**：上传前展示名长度 ≤150；若发生缩短，来源元数据和本地文件名不得同步截断。
+
+#### L034: Substack 最大容器漂移会混入页尾；`og:title` 可能只是嘉宾名（2026-07-23，自检发现）
+- **问题**：Lenny's Newsletter 播客文章抓取时，正文选择器按文本长度在
+  `.available-content`、`article`、`main` 中取最大值，结果把评论、Recent Episodes 和
+  页脚图片一起归档；标题选择器与 `og:title` 又返回 “Hamel Husain and Shreya Shankar”，
+  而不是完整文章标题。
+- **根因**：侦察、图片枚举和 Markdown 转换没有为 Substack 锁定同一个稳定正文容器；
+  标题提取假设页面 H1/OG 永远是文章标题，但播客模板将它们用于嘉宾信息。
+- **正确做法**：
+  1. Substack 的正文、图片枚举和 Markdown 转换统一优先锁定 `.available-content`，
+     只有缺失时才进入通用最大容器回退。
+  2. 标题优先读取 JSON-LD 中同时带 `headline` 和 `datePublished` 的 Article 项；
+     缺失时回退 `document.title`，最后才使用通用 H1/OG。
+  3. 抓取后对账正文图片；评论头像、Recent Episodes 缩略图和站点图标不得进入工作包。
+- **自检项**：Substack 工作包不含 `Discussion about`、`Recent Episodes` 等页尾标记；
+  本地图片只来自 `.available-content`；标题与 JSON-LD headline 一致。
+
+#### L033: 微信公众号文章必须走乐享原生导入，禁止抓取与 Markdown 降级（2026-07-23，用户明确要求）
+- **问题**：主流程把微信公众号写成“可归档为 hyperlink”，但仍允许用户提到在线文档时走
+  抓取流程；平台参考还允许 `file_create_hyperlink` 失败后回退 `fetch_article.py`。
+  这会绕过乐享已内置的微信全文、图片和元信息导入能力，增加浏览器依赖、Token 消耗和漏图风险。
+- **根因**：微信被当作通用网页的一种，只设置“首选方案”，没有在 URL 路由层建立排他的
+  强制分支；失败处理也沿用了通用网页的降级思路。
+- **正确做法（强制）**：
+  1. Step 0 首先识别 `mp.weixin.qq.com` host，命中后禁止正文侦察和所有抓取动作。
+  2. 目录定位与 URL/标题去重后，只调用乐享 MCP `file_create_hyperlink`，参数使用
+     `url`、`parent_entry_id` 和可选 `name`；不得编造 schema 中不存在的 `space_id`。
+  3. 必须取得 `entry.id`；响应字段可见时再核验 `finished=true`、
+     `entry_type=flink`、`extension=wechat`。
+  4. 跳过工作包、翻译、Markdown uploader 和 block 正文写入。
+  5. 原生导入失败时报告并停止，禁止静默回退 WebFetch、Playwright/CDP、
+     `fetch_article.py` 或通用 Markdown 导入。
+- **自检项**：微信任务的执行记录中只能出现目录/去重查询与
+  `file_create_hyperlink`；当天目录内来源 URL 唯一，且没有本地工作包或 Markdown page。
+
 #### L032: Callout 标题过长会被错误选为线上锚点；失败页未回滚时必须复用原条目（2026-07-22，自检发现）
 - **问题**：双语 `> [!note]` 标题超过 80 字符后，uploader 把包含 `[!note]` 标记的整行
   选为长段落锚点；乐享渲染为 callout 时会去掉该标记，导致正文、图片和 callout 均已写入，
@@ -428,6 +496,10 @@
 | 2026-07-21 | 用户反馈页面名是“原文标题 中英对照”且正文重复 H1 | 新增双语 `display_title`；发布名改为“原文标题 / 中文标题”；删除重复文档级 H1 | SKILL.md, trans-doc-to-md, lessons-learned.md |
 | 2026-07-21 | 用户再次反馈音视频访谈切分过碎、主持人/嘉宾不明确 | YouTube 增加 Whisper+CAM++ 混合说话人链路；播客/视频均按同一 spk 合并；匿名角色标签；多嘉宾回归测试 | yt_download_transcribe.py, podcast_to_lexiang.py, youtube-video.md, podcast-audio.md, SKILL.md |
 | 2026-07-21 | 用户发现上传失败遗留临时页面 | uploader 新建失败自动回滚；归档层增加上传前后快照对账并禁止诊断性试验页面 | upload-markdown-to-lexiang, SKILL.md, lessons-learned.md |
+| 2026-07-23 | 用户要求微信公众号不要抓取，改走乐享 MCP 内置导入 | 微信 URL 路由改为强制 `file_create_hyperlink`；跳过工作包/翻译/uploader；失败禁止回退抓取 | SKILL.md, platform-specific.md, lessons-learned.md |
+| 2026-07-23 | 自检发现 Lenny 播客模板把最大容器扩到评论/Recent Episodes，且 OG 标题仅为嘉宾名 | Substack 三阶段统一锁定 `.available-content`；标题改取带发布日期的 JSON-LD headline | fetch_article.py, SKILL.md, lessons-learned.md |
+| 2026-07-23 | 完整双语标题超过乐享页面名称 150 字符限制 | 上传前检查展示名长度；仅缩短 display_title，完整源标题与文件名不变 | SKILL.md, lessons-learned.md |
+| 2026-07-23 | 用户要求复盘文章抓取耗时和 Token 浪费 | Substack 定向等待、图片并行下载、截图按需开启、meta 内置紧凑硬校验报告 | fetch_article.py, SKILL.md, lessons-learned.md |
 
 ---
 

@@ -21,7 +21,7 @@ def load_module(name: str, path: Path):
 class SkillContractTests(unittest.TestCase):
     def test_frontmatter_dependencies(self):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn('version: "4.4.0"', skill)
+        self.assertIn('version: "4.5.0"', skill)
         self.assertIn("name: trans-doc-to-md", skill)
         self.assertIn('version: ">=3.0.0,<4.0.0"', skill)
         self.assertIn("name: upload-markdown-to-lexiang", skill)
@@ -174,6 +174,17 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn('output_path / "meta.json"', article)
         for field in ("source_url", "source_title", "source_type", "language"):
             self.assertIn(f'"{field}"', article)
+
+    def test_wechat_uses_native_lexiang_import_without_fetch_fallback(self):
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        platform = (ROOT / "references" / "platform-specific.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("file_create_hyperlink", skill)
+        self.assertIn("禁止浏览器/WebFetch/脚本抓取", skill)
+        self.assertIn("不得静默回退抓取", skill)
+        self.assertIn("禁止静默回退到 `fetch_article.py`", platform)
+        self.assertIn("不生成 `source.md`、`images/`、`meta.json`", platform)
 
     def test_article_defaults_to_cdp_and_recognizes_custom_substack_domain(self):
         module = load_module("article_contract", SCRIPTS / "fetch_article.py")

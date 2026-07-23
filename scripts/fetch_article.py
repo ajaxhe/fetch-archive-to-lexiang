@@ -924,18 +924,19 @@ async def _extract_and_save(
     is_dedao: bool = False,
     is_webflow: bool = False,
     is_substack: bool = False,
+    debug_screenshot: bool = False,
 ) -> str:
     """Extract article content, download images, convert to Markdown, and save.
     
     This is the shared extraction logic used by both CDP mode and cookie-injection mode.
     Returns the path to the saved source.md.
     """
-    # Take a screenshot for debugging
-    try:
-        await page.screenshot(path="/tmp/article_fetch_debug.png", full_page=False)
-        print("📸 调试截图: /tmp/article_fetch_debug.png")
-    except Exception:
-        pass
+    if debug_screenshot:
+        try:
+            await page.screenshot(path="/tmp/article_fetch_debug.png", full_page=False)
+            print("📸 调试截图: /tmp/article_fetch_debug.png")
+        except Exception:
+            pass
 
     # Extract article content
     print("📝 正在提取文章内容...")
@@ -962,13 +963,17 @@ async def _extract_and_save(
                         'article', '.entry-content', '[class*="body"]'
                     ];
         
-        let articleEl = null;
+        let articleEl = isSubstack
+            ? document.querySelector('.available-content')
+            : null;
         let maxLen = 0;
-        for (const sel of selectors) {
-            const el = document.querySelector(sel);
-            if (el) {
-                const len = el.innerText.length;
-                if (len > maxLen) { maxLen = len; articleEl = el; }
+        if (!articleEl) {
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    const len = el.innerText.length;
+                    if (len > maxLen) { maxLen = len; articleEl = el; }
+                }
             }
         }
         
@@ -978,6 +983,25 @@ async def _extract_and_save(
 
         // === 标题提取（多策略，优先级递减） ===
         let title = '';
+        if (isSubstack) {
+            const visit = value => {
+                if (!value || typeof value !== 'object') return [];
+                if (Array.isArray(value)) return value.flatMap(visit);
+                return [value, ...Object.values(value).flatMap(visit)];
+            };
+            for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+                try {
+                    const item = visit(JSON.parse(script.textContent || '{}')).find(
+                        candidate => candidate && candidate.headline && candidate.datePublished
+                    );
+                    if (item) {
+                        title = String(item.headline).trim();
+                        break;
+                    }
+                } catch (_) {}
+            }
+            if (!title) title = document.title.trim();
+        }
         if (isWechat) {
             // WeChat: title is in #activity-name or h1.rich_media_title
             const wcTitleSelectors = ['#activity-name', 'h1.rich_media_title', 'h1'];
@@ -1123,7 +1147,9 @@ async def _extract_and_save(
         const isWechat = args.isWechat;
         const isDedao = args.isDedao;
         const isSubstack = args.isSubstack;
-        let articleEl = null;
+        let articleEl = isSubstack
+            ? document.querySelector('.available-content')
+            : null;
         if (isWechat) {
             // WeChat: use #js_content directly
             articleEl = document.querySelector('#js_content') || document.querySelector('.rich_media_content');
@@ -1218,11 +1244,10 @@ async def _extract_and_save(
         "isSubstack": is_substack,
     })
 
-    image_map = {}
-    for i, img_info in enumerate(image_elements):
+    async def download_image(i, img_info):
         src = img_info["src"]
         if not src or src.startswith("data:"):
-            continue
+            return None
 
         ext = ".png"
         parsed_img = urllib.parse.urlparse(src)
@@ -1251,10 +1276,22 @@ async def _extract_and_save(
                     # Auto-convert WebP/SVG to PNG for compatibility
                     converted = _convert_image_format(local_path)
                     fmt_note = " (→PNG)" if converted else ""
-                    image_map[src] = f"images/{filename}"
                     print(f"  ✅ 图片 {i+1}/{len(image_elements)}: {filename} ({len(content_bytes)//1024}KB){fmt_note}")
+                    return src, f"images/{filename}"
         except Exception as e:
             print(f"  ⚠️  图片下载异常: {str(e)[:60]}")
+        return None
+
+    download_results = await asyncio.gather(*(
+        download_image(i, img_info)
+        for i, img_info in enumerate(image_elements)
+    ))
+    image_map = {
+        src: local_rel
+        for result in download_results
+        if result is not None
+        for src, local_rel in [result]
+    }
 
     # Convert HTML to Markdown
     print("📝 正在转换为 Markdown...")
@@ -1266,7 +1303,9 @@ async def _extract_and_save(
         const isWebflow = args.isWebflow;
         const isSubstack = args.isSubstack;
         
-        let articleEl = null;
+        let articleEl = isSubstack
+            ? document.querySelector('.available-content')
+            : null;
         if (isWechat) {
             articleEl = document.querySelector('#js_content') || document.querySelector('.rich_media_content');
         }
@@ -1438,14 +1477,34 @@ async def _extract_and_save(
             article_data.get("author", ""),
         )
 
-    referenced_images = set(
-        re.findall(r"!\[[^\]]*\]\((images/[^)\s]+)\)", markdown)
+    referenced_images = re.findall(
+        r"!\[[^\]]*\]\((images/[^)\s]+)\)", markdown
     )
-    for local_rel in set(image_map.values()) - referenced_images:
+    referenced_image_set = set(referenced_images)
+    for local_rel in set(image_map.values()) - referenced_image_set:
         (output_path / local_rel).unlink(missing_ok=True)
-    archived_images = [
-        local_rel for local_rel in image_map.values() if local_rel in referenced_images
+    archived_images = list(dict.fromkeys(referenced_images))
+
+    missing_images = [
+        local_rel for local_rel in archived_images
+        if not (output_path / local_rel).is_file()
     ]
+    if missing_images:
+        raise RuntimeError(f"正文引用的本地图片不存在: {missing_images}")
+
+    substack_noise = (
+        "discussion about this episode",
+        "recent episodes",
+        "subscribe for more from",
+        "discover more from",
+        "this newsletter is provided for informational purposes only",
+    )
+    noise_hits = [
+        marker for marker in substack_noise
+        if is_substack and marker in markdown.lower()
+    ]
+    if noise_hits:
+        raise RuntimeError(f"Substack 正文仍含平台噪音: {noise_hits}")
 
     # Build final document
     import datetime as _dt
@@ -1469,6 +1528,7 @@ async def _extract_and_save(
             f"{md_path} 已存在且内容不同；请使用新的输出目录，避免覆盖不可变原文"
         )
     md_path.write_text(md_content, encoding="utf-8")
+    source_sha256 = hashlib.sha256(md_content.encode("utf-8")).hexdigest()
 
     sample = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", markdown)[:5000]
     cjk_count = len(re.findall(r"[\u3400-\u9fff]", sample))
@@ -1486,6 +1546,14 @@ async def _extract_and_save(
         "image_count": len(archived_images),
         "images": archived_images,
         "fetched_at": _dt.datetime.now().isoformat(),
+        "verification": {
+            "ok": True,
+            "source_sha256": source_sha256,
+            "markdown_image_references": len(referenced_images),
+            "unique_local_images": len(archived_images),
+            "missing_local_images": 0,
+            "platform_noise_hits": noise_hits,
+        },
     }
     meta_path = output_path / "meta.json"
     meta_path.write_text(json.dumps(article_meta, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1506,6 +1574,7 @@ async def fetch_article(
     output_dir: str,
     headless: bool = True,
     use_cdp: bool = True,
+    debug_screenshot: bool = False,
 ):
     """Fetch article content and images.
     
@@ -1556,7 +1625,8 @@ async def fetch_article(
 
             print(f"📥 在已连接的 CDP Chrome 新标签页中加载: {url}")
             try:
-                await page.goto(url, wait_until="networkidle", timeout=60000)
+                wait_until = "domcontentloaded" if is_substack else "networkidle"
+                await page.goto(url, wait_until=wait_until, timeout=60000)
             except Exception as e:
                 print(f"⚠️  页面加载超时，继续: {e}")
                 await page.wait_for_timeout(5000)
@@ -1564,7 +1634,16 @@ async def fetch_article(
             # Wait for Cloudflare challenge if detected
             await _wait_for_cloudflare(page)
 
-            await page.wait_for_timeout(3000)
+            if is_substack:
+                await page.wait_for_function(
+                    """() => {
+                        const el = document.querySelector('.available-content');
+                        return el && el.innerText.trim().length >= 100;
+                    }""",
+                    timeout=15000,
+                )
+            else:
+                await page.wait_for_timeout(3000)
 
             # === Substack login check in CDP mode ===
             if is_substack:
@@ -1642,6 +1721,7 @@ async def fetch_article(
                 is_dedao=is_dedao,
                 is_webflow=is_webflow,
                 is_substack=is_substack,
+                debug_screenshot=debug_screenshot,
             )
 
             # Close the tab we opened (don't close the browser — it's the user's Chrome)
@@ -1821,6 +1901,7 @@ async def fetch_article(
             is_dedao=is_dedao,
             is_webflow=is_webflow,
             is_substack=is_substack,
+            debug_screenshot=debug_screenshot,
         )
 
         await browser.close()
@@ -1891,6 +1972,7 @@ def main():
     fetch_parser.set_defaults(use_cdp=True)
     fetch_parser.add_argument("--cdp", dest="use_cdp", action="store_true", help="使用 CDP 模式连接并复用真实 Chrome（默认）")
     fetch_parser.add_argument("--no-cdp", dest="use_cdp", action="store_false", help="显式使用隔离的 Playwright 浏览器（无既有登录态）")
+    fetch_parser.add_argument("--debug-screenshot", action="store_true", help="保存调试截图（默认关闭）")
     
     # Login subcommand
     subparsers.add_parser("login", help="登录 Substack 并缓存登录态到 ~/.substack/storage_state.json")
@@ -1901,7 +1983,13 @@ def main():
         asyncio.run(substack_login())
     elif args.command == "fetch":
         headless = not args.no_headless
-        result = asyncio.run(fetch_article(url=args.url, output_dir=args.output_dir, headless=headless, use_cdp=args.use_cdp))
+        result = asyncio.run(fetch_article(
+            url=args.url,
+            output_dir=args.output_dir,
+            headless=headless,
+            use_cdp=args.use_cdp,
+            debug_screenshot=args.debug_screenshot,
+        ))
         if result:
             print(f"\n🎉 完成!")
         else:
@@ -1915,9 +2003,15 @@ def main():
         compat_parser.add_argument("--output-dir", "-o", required=True, help="输出目录")
         compat_parser.add_argument("--headless", action="store_true", default=True)
         compat_parser.add_argument("--no-headless", action="store_true")
+        compat_parser.add_argument("--debug-screenshot", action="store_true")
         compat_args = compat_parser.parse_args()
         headless = not compat_args.no_headless
-        result = asyncio.run(fetch_article(url=compat_args.url, output_dir=compat_args.output_dir, headless=headless))
+        result = asyncio.run(fetch_article(
+            url=compat_args.url,
+            output_dir=compat_args.output_dir,
+            headless=headless,
+            debug_screenshot=compat_args.debug_screenshot,
+        ))
         if result:
             print(f"\n🎉 完成!")
         else:

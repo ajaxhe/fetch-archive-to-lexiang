@@ -36,10 +36,9 @@
 
 ## 微信公众号
 
-- WebFetch 无法保证懒加载图片完整，图文必须使用 `fetch_article.py`。
-- 优先读取 `data-src`，慢速滚动触发懒加载。
-- 图片下载请求需要正确 Referer。
-- Markdown 转换不能 strip `img`，否则会丢失图片位置。
+- `mp.weixin.qq.com` URL 必须直接调用乐享 MCP `file_create_hyperlink`。
+- 禁止 WebFetch、Playwright/CDP、`fetch_article.py`、本地图片下载和 Markdown uploader。
+- 原生导入失败时报告并停止，不得回退抓取。
 
 ## CDP 登录态
 

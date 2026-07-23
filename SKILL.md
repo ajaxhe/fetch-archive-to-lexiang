@@ -1,11 +1,11 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.4.0"
+version: "4.6.0"
 author: ajaxhe
 license: MIT
 category: research
-description: Discover and fetch articles, videos, podcasts, and PDFs into standardized source packages, then orchestrate deduplicated Lexiang archival. 侦察和抓取文章、视频、播客与 PDF，生成标准来源工作包并编排乐享归档。
-tags: fetch, archive, youtube, podcast, pdf, transcribe, lexiang, paywall, substack, medium, arxiv
+description: Import WeChat Official Account articles through Lexiang's native MCP interface; discover and fetch other articles, videos, podcasts, and PDFs into standardized source packages, then orchestrate deduplicated archival. 微信公众号文章使用乐享 MCP 原生导入；其他来源经侦察、抓取和标准工作包编排归档。
+tags: fetch, archive, wechat, youtube, podcast, pdf, transcribe, lexiang, paywall, substack, medium, arxiv
 disable-model-invocation: false
 requires:
   skills:
@@ -52,6 +52,9 @@ requires:
 6. Markdown 页面只用 uploader 写入，不得恢复任何旧导入、文件上传或本地上传器副本。
 7. 视频和音频继续使用 `scripts/upload_video_via_openapi.py` 的 VOD 路径。
 8. 上传后少量人工增量修复仅是异常维护路径；每次修复必须同步本地最终 Markdown。
+9. `mp.weixin.qq.com` 文章是强制例外：只调用乐享 MCP
+   `file_create_hyperlink` 原生导入，禁止浏览器/WebFetch/脚本抓取，禁止生成工作包，
+   禁止调用 Markdown uploader；接口失败时报告错误并停止，不得静默回退抓取。
 
 ## 统一工作包
 
@@ -82,14 +85,16 @@ requires:
 ## Step 0：预检与来源侦察
 
 1. 阅读 `references/lessons-learned.md` 中全部 P0 教训。
-2. 侦察标题、作者、日期、语言、长度、图片数、媒体时长、付费墙和登录墙。
-3. 有图片必须用抓取脚本下载，不能只依赖 WebFetch。
-4. 网页抓取默认使用 CDP：先检查已配置端口（默认 9222，实际端口记录在
+2. **先按 URL 路由**：host 为 `mp.weixin.qq.com` 时直接进入 Step 1 的
+   “微信公众号强制分支”；不得打开页面侦察正文或进入任何抓取逻辑。
+3. 非微信来源才侦察标题、作者、日期、语言、长度、图片数、媒体时长、付费墙和登录墙。
+4. 非微信网页有图片必须用抓取脚本下载，不能只依赖 WebFetch。
+5. 网页抓取默认使用 CDP：先检查已配置端口（默认 9222，实际端口记录在
    `~/.fetch_article/cdp_port`）和有效 page target，复用已有浏览器上下文与登录态，
    并在其中新开任务标签页；端口未启动时主动启动 CDP Chrome。CDP 连接失败
    必须退出，禁止静默回退到无登录态的 Testing Chrome。只有用户明确要求隔离浏览器时
    才使用 `--no-cdp`。
-5. 确定新的独立工作目录，避免覆盖已有 `source.md`。
+6. 非微信来源确定新的独立工作目录，避免覆盖已有 `source.md`。
 
 平台细节见 `references/platform-specific.md`。
 
@@ -97,16 +102,43 @@ requires:
 
 | 来源 | 处理方式 |
 |---|---|
-| 微信公众号 | 可归档为乐享 hyperlink；若要求在线 Markdown 页面则使用文章抓取流程 |
+| 微信公众号 (`mp.weixin.qq.com`) | 强制调用乐享 MCP `file_create_hyperlink`；不抓取、不建工作包、不上传 Markdown |
 | 免费/付费网页 | `scripts/fetch_article.py fetch "<URL>" --output-dir <DIR>`（默认 CDP） |
 | YouTube | `scripts/yt_download_transcribe.py "<URL>" --output-dir <DIR>` |
 | 播客 | `scripts/podcast_to_lexiang.py "<URL>" --output-dir <DIR>` |
 | PDF / 乐享 PDF | 准备 PDF/解析原文后交给 `trans-doc-to-md` |
 
+### 微信公众号强制分支
+
+1. 按 Step 3 的目标规则获取知识库根目录，查询并复用当天 `YYYY-MM-DD` folder。
+2. 在当天目录内按来源 URL 和规范化标题去重；同一 URL 已存在时复用现有条目，
+   不重复导入。
+3. 调用乐享 MCP `file_create_hyperlink`：
+
+```text
+url = "https://mp.weixin.qq.com/s/..."
+parent_entry_id = "<当天目录 entry_id>"
+name = "<可选；已可靠获知标题时才传，禁止为取标题而抓取正文>"
+```
+
+4. 必须验证调用成功且返回 `entry.id`；可见响应字段允许时，同时确认
+   `entry_type == "flink"`、`extension == "wechat"`。
+5. 该分支到此结束，直接执行 Step 4 的微信自检。**跳过工作包生成、Step 2 内容加工、
+   uploader 和 block 二次写入。** 接口不可用、返回失败或验证不通过时，报告错误并停止；
+   不得调用 `fetch_article.py`、WebFetch、Playwright/CDP 或通用网页导入作为降级。
+
 三个抓取/转录脚本均以 `source.md` + `meta.json` 为标准输出。YouTube 和播客同时保留
 下载媒体、ASR 中间产物；它们不翻译、不上传 Markdown。
 
+网页抓取默认使用快速保真模式：Substack 以 `domcontentloaded` + 正文条件等待替代固定
+等待，图片并行下载，调试截图默认关闭（排障时显式加 `--debug-screenshot`）。
+`meta.json.verification` 必须满足 `ok=true`、图片引用/本地文件对账一致且
+`platform_noise_hits=[]`；Agent 优先读取该紧凑报告，校验通过时不要为重复确认而读取整篇
+`source.md`，以减少 Token 消耗。
+
 ## Step 2：内容加工
+
+微信公众号强制分支跳过本步骤。
 
 读取 `meta.json.language`：
 
@@ -120,6 +152,9 @@ requires:
 ## Step 3：乐享目录、去重与上传
 
 目标优先级：用户指定 > 工作区规则 > 本 Skill 的 gitignored `config.json` > 初始化。
+
+微信公众号只执行本步骤的目录定位与导入前去重，随后使用 Step 1 的
+`file_create_hyperlink`；不得进入下方 Markdown uploader 流程。
 
 1. 获取目标知识库 `root_entry_id`。
 2. 查询并复用当天 `YYYY-MM-DD` folder；不存在才创建，使用
@@ -172,6 +207,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 ```text
 □ source.md 未被修改，且不是摘要
 □ meta.json 标准字段完整，原文标题与来源 URL 可追溯
+□ meta.json.verification.ok == true；优先依据紧凑报告完成抓取自检，避免重复通读全文
 □ 作者与发布日期来自 canonical meta/time/JSON-LD，并在最终文档顶部只展示一次
 □ images/ 中引用文件完整，图文顺序保留
 □ 订阅引导、相关推荐、newsletter disclaimer、页脚图片等平台噪音已在抓取转 MD 时过滤
@@ -190,6 +226,13 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ 访谈视频：主持人/嘉宾标签完整；多位嘉宾没有因同属 guest 被误合并
 □ 新建页面上传失败时已自动回滚，不在日期目录或知识库留下临时空页面
 □ 上传后目标目录与上传前快照对账，仅保留最终页面和 VOD；无 test/v2/空白/重复条目
+□ 微信公众号：只调用 file_create_hyperlink，未启动浏览器/WebFetch/抓取脚本
+□ 微信公众号：未生成工作包、未调用 trans-doc-to-md 或 Markdown uploader
+□ 微信公众号：返回 entry.id；可见字段允许时 entry_type=flink、extension=wechat
+□ 微信公众号：当天目录内来源 URL 唯一；失败时已停止且未回退抓取
+□ Substack：正文提取、图片枚举和 Markdown 转换都锁定 `.available-content`，未因 `article`/`main` 更长而混入评论、Recent Episodes 或页脚
+□ Substack：标题优先取带 `datePublished` 的 JSON-LD `headline`，未把嘉宾名或正文小标题误作文章标题
+□ 页面展示名不超过乐享 150 字符限制；超长双语标题只缩短展示名，`meta.title`、`source_title` 和最终 Markdown 文件名仍保留完整原题
 ```
 
 ## Step 5：自省
@@ -200,6 +243,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 问题归属：
 
 - 抓取、转录、工作包、目录/去重/VOD：本 Skill。
+- 微信公众号 MCP 原生导入、目录与去重：本 Skill。
 - 清洗、翻译、富元素识别、完整性：`trans-doc-to-md`。
 - Markdown 渲染、页面写入和线上对账：`upload-markdown-to-lexiang`。
 
