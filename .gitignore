@@ -17,3 +17,6 @@ token_cache.json
 
 # 运行时输出（抓取的文章等）
 output/
+
+# 自动化任务运行记忆（本机运行态，不属于 skill 内容）
+.workbuddy/
