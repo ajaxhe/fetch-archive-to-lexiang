@@ -174,6 +174,17 @@
 - **自检项**：新工作包必须有 `verification.ok=true`、`missing_local_images=0`、
   `platform_noise_hits=[]`，且 source/最终 meta 图片顺序稳定。
 
+#### L037: 沙箱 curl+html2text 抓 Substack 时图片链接会畸形，且双语校验器对标点/编号敏感（2026-08-24，自检发现）
+- **背景**：本次抓 latent.space（Substack）免费文，沙箱无 Chrome/Chromium，走 L022 的 curl+html2text 路径。出现两类非显然问题：①html2text 把 `<a href="substackcdn..."><img src="local"></a>` 渲染成畸形串（退化成 `[![]](images/x])` 或 `[!(images/x)`），直接上传会丢图或产生空 alt；②trans-doc-to-md 的 `bilingual_validate.py` 报「疑似缺少源文段落」。
+- **根因**：
+  1. html2text 对「链接包裹图片」生成 `[![alt](img)](link)`；若脚本改写 img src 为本地的同时未清理外层 `(link)`，会先变 `[!(local)](...)`，再切括号时退化成 `[![]](local])` 这类畸形。
+  2. 校验器把「引导句 + 编号列表」当作**同一个源段落块**校验 `tokens_in_order`：①双语把 `1./2./3.` 改成无序 `-`，则 `1/2/3` 令牌消失→失败；②源文用弯引号 `’`/`“”（Substack 默认），双语英文若用直引号 `'`/`"`，则 `Glean's` 等令牌 mismatch→失败。
+- **正确做法**：
+  1. 抓取后统一用正则修复图片：`re.sub(r'\[!\[\]\(images/([^\]]+)\]', r'![](images/\1)', s)`（针对 `[![]](images/x])` 形态），并清理残留的 `(https://substackcdn...)` 外层链接；最终所有图片必须是标准 `![](images/img_NN.png)`，且 `s.count("substackcdn")==0`。
+  2. 双语稿英文侧**逐字照搬 source.md 的弯引号/弯撇号**（`’` `“` `”`），不要重打成 ASCII；源文是编号列表就保留 `1./2./3.` 编号。
+  3. 上传前必跑 `bilingual_validate.py --profile generic`，`ok=true` 才上传；失败先查弯标点与列表编号，而非怀疑翻译缺失。
+- **自检项**：grep 最终 md 确认无 `substackcdn` 残留、图片均为 `![](images/...)`；`bilingual_validate.py` 退出码 0 且 `ok=true`。
+
 #### L035: 乐享页面名称最多 150 字符；超长双语标题只缩短展示名（2026-07-23，自检发现）
 - **问题**：完整英文播客标题包含嘉宾与课程说明，再拼接中文译名后超过乐享
   `name` 的 150 字符限制；本地 dry-run 未发现，创建页面时服务端拒绝。
