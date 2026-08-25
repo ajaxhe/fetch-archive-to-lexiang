@@ -150,6 +150,23 @@
 
 ### 🟡 P1 — 偶尔犯的错误（需要注意）
 
+#### L038: Every.to 边注哈希链接会让 uploader 对账失败；MCP 与默认 uploader 不在同一公司（2026-08-25，自检发现）
+- **问题**：`After Automation` 上传后 `VERIFY_ERROR`，缺少长段落锚点。预览里出现
+  `1 marginalia-cite-1`。同时默认 uploader 报 MCP 刚创建的日期目录「不存在」。
+- **根因**：
+  1. Every.to 把脚注写成 `[(1)](#marginalia-cite-1)`。uploader 锚点会把链接目标
+     `marginalia-cite-N` 算进纯文本，乐享线上 clean 没有这段哈希，对账失败。
+  2. MCP 当前账号写的是 CSIG 个人知识库；uploader 默认凭证
+     `company_from=e6c565d6…`，看不到 MCP 创建的条目。CSIG 凭证在
+     `--profile csig`。
+- **正确做法**：
+  1. 双语终稿把 `[(N)](#marginalia-cite-N)` 和 `[ (N)](#marginalia-cite-N)` 一律改成
+     `[(N)]`；改完再跑 `bilingual_validate.py`，然后用已有 `entry_id` 覆盖，禁止新建第二页。
+  2. 在 CSIG 个人知识库归档时，uploader 必须加 `--profile csig`。默认 profile 失败
+     先对账 company，不要改目录或回退到另一个知识库。
+- **自检项**：最终 Markdown 不含 `marginalia-cite`；uploader JSON 的 `company_from`
+  与目标知识库一致；`verified=true`。
+
 #### L036: 抓取正确性必须在脚本内一次验收；固定等待、串行图片和默认截图拖慢流程（2026-07-23，用户要求复盘优化）
 - **问题**：同一篇 Lenny/Substack 文章因标题、正文容器和图片问题连续重抓 5 次；
   每次抓取还固定等待、串行下载图片并生成调试截图。错误直到翻译/上传阶段才暴露，既耗时，
@@ -511,6 +528,7 @@
 | 2026-07-23 | 自检发现 Lenny 播客模板把最大容器扩到评论/Recent Episodes，且 OG 标题仅为嘉宾名 | Substack 三阶段统一锁定 `.available-content`；标题改取带发布日期的 JSON-LD headline | fetch_article.py, SKILL.md, lessons-learned.md |
 | 2026-07-23 | 完整双语标题超过乐享页面名称 150 字符限制 | 上传前检查展示名长度；仅缩短 display_title，完整源标题与文件名不变 | SKILL.md, lessons-learned.md |
 | 2026-07-23 | 用户要求复盘文章抓取耗时和 Token 浪费 | Substack 定向等待、图片并行下载、截图按需开启、meta 内置紧凑硬校验报告 | fetch_article.py, SKILL.md, lessons-learned.md |
+| 2026-08-25 | Every.to 脚注哈希导致对账失败；默认 uploader 看不到 CSIG 目录 | 终稿去掉 `#marginalia-cite-N`；CSIG 个人库上传必须 `--profile csig` | SKILL.md 4.6.1, lessons-learned.md |
 
 ---
 
