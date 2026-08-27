@@ -150,6 +150,30 @@
 
 ### 🟡 P1 — 偶尔犯的错误（需要注意）
 
+#### L039: 含裸 URL 的长行会因乐享 clean 双写链接而锚点失配（2026-08-27，自检发现）
+- **问题**：NYT 文章双语稿首次上传报 `VERIFY_ERROR: 缺少长段落锚点`，失败行为
+  `> 作者页 / Author: https://www.nytimes.com/by/pablo-robles · 发布时间 / Published: 2026-08-26T16:53:48-04:00`。
+  重试 4 次（含指数退避）后仍失败，属稳定渲染差异而非最终一致性问题。
+- **根因**：
+  1. 乐享 `block_fetch_page render_mode=clean` 把裸 URL 渲染成 `[url](url)` markdown
+     链接（URL 在 clean 文本中出现两次），且 URL 前后紧邻的空格被吞。
+  2. uploader 的 `normalize_for_compare` 只删标点不剥离链接 href；≥80 字符的长段落
+     锚点若**跨越 URL 结尾边界**（URL 后紧跟其他文本），锚点中 `robles发布时间` 连续，
+     而线上第一个 URL 后是第二个 URL（href），子串匹配必然失败。
+  3. URL 在行中间**之前**截断的锚点（如超长 URL 在 100 字符处截断）能在第一个 URL
+     副本中命中，因此同类行 `原文链接 / Source: <超长URL>` 反而通过——同一文档中
+     表现不一致，容易误判为偶发。
+- **正确做法**：
+  1. 双语稿元信息中含裸 URL 的行，要么整行 plain 文本 < 80 字符（不构成长段落锚点），
+     要么把 URL 放行尾；**禁止**让 ≥80 字符锚点跨越 `URL + 后续文本` 边界。
+  2. 典型修复：把 `作者页 URL · 发布时间 ISO` 拆成两行短行（各自 <80 字符）；
+     bilingual_validate 的 token 子序列匹配不受拆行影响，中文覆盖率按段落数反而更准。
+  3. 上传失败且页面未回滚时，复用原 `entry_id --entry-id` 覆盖重传（L032），
+     禁止新建第二页。
+- **自检项**：grep 最终 Markdown 中含 `https://` 的行，plain 长度 ≥80 且 URL 后还有
+  其他文本的行必须拆分；uploader `verified=true` 才算交付。
+- **同步更新**：SKILL.md Step 4 自检清单。
+
 #### L038: Every.to 边注哈希链接会让 uploader 对账失败；MCP 与默认 uploader 不在同一公司（2026-08-25，自检发现）
 - **问题**：`After Automation` 上传后 `VERIFY_ERROR`，缺少长段落锚点。预览里出现
   `1 marginalia-cite-1`。同时默认 uploader 报 MCP 刚创建的日期目录「不存在」。
@@ -463,6 +487,11 @@
 
 ### 🟢 P2 — 已修复的小问题（备忘）
 
+#### L039: 英文原文含非货币 `$`（如 `perf/$ standpoint`）会触发 uploader 公式误判（2026-08-27，自检发现）
+- **背景**：SemiAnalysis 文章含 `from a perf/$ standpoint`。uploader 的公式识别只把 `$数字`/`$≈数字`/`$~数字` 当货币，`$` 后跟空格/字母即视为 LaTeX 定界符并向后吞文本找配对，跨行后行级替换计数不一致，报 `PREFLIGHT_ERROR: 存在未物化的公式`。
+- **正确做法**：上传前全文扫描非货币 `$`（`$` 后非数字且非 `≈~`）；此类"每美元"语义的 `$` 改为全角 `＄`（TOKEN_RE 不含 `$`，双语 token 校验不受影响，视觉近似）。也可归档层预处理时改写，但禁止用 `\$` 转义（trans 校验器拒绝残留 `\$`，且 uploader 不会剥掉反斜杠）。
+- **自检项**：uploader PREFLIGHT 报"存在未物化的公式"时，先 grep 非货币 `$` 再排查；修复后复跑 `bilingual_validate.py` 确认仍 `ok=true`。
+
 #### L005: `after=""` 不是置顶
 - **问题**：API 文档说 `after=""` 会排到最前面，实际是排到最后面
 - **修复**：必须用 `before=<第一个条目ID>` 来置顶
@@ -529,6 +558,7 @@
 | 2026-07-23 | 完整双语标题超过乐享页面名称 150 字符限制 | 上传前检查展示名长度；仅缩短 display_title，完整源标题与文件名不变 | SKILL.md, lessons-learned.md |
 | 2026-07-23 | 用户要求复盘文章抓取耗时和 Token 浪费 | Substack 定向等待、图片并行下载、截图按需开启、meta 内置紧凑硬校验报告 | fetch_article.py, SKILL.md, lessons-learned.md |
 | 2026-08-25 | Every.to 脚注哈希导致对账失败；默认 uploader 看不到 CSIG 目录 | 终稿去掉 `#marginalia-cite-N`；CSIG 个人库上传必须 `--profile csig` | SKILL.md 4.6.1, lessons-learned.md |
+| 2026-08-27 | NYT 双语稿含裸 URL 长行首次上传 VERIFY_ERROR（乐享 clean 把 URL 双写成 [url](url)） | 含裸 URL 行保持 plain <80 字符或 URL 放行尾；失败复用 entry_id 覆盖重传（L039） | SKILL.md Step 4, lessons-learned.md |
 
 ---
 

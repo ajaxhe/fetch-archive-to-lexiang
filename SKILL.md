@@ -234,6 +234,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ Substack：标题优先取带 `datePublished` 的 JSON-LD `headline`，未把嘉宾名或正文小标题误作文章标题
 □ 页面展示名不超过乐享 150 字符限制；超长双语标题只缩短展示名，`meta.title`、`source_title` 和最终 Markdown 文件名仍保留完整原题
 □ Every.to：最终 Markdown 去掉 `[(N)](#marginalia-cite-N)` 哈希链接，只留 `[(N)]`，否则 uploader 长段落锚点会对不上
+□ 含裸 URL 的行 plain 长度 <80 字符或 URL 在行尾；≥80 字符锚点禁止跨越 URL 结尾边界（乐享 clean 会把 URL 双写成 [url](url)，见 L039）
 □ MCP 在 CSIG 个人知识库建目录时，uploader 必须用 `--profile csig`；默认凭证的 company_from 与 MCP 不一致会报条目不存在
 ```
 
