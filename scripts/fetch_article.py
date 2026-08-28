@@ -903,6 +903,13 @@ def _strip_substack_archive_noise(markdown: str, author: str = "") -> str:
             "",
             markdown.rstrip(),
         )
+    # Publication nav strip rendered inside the body, e.g. "America | Tech | Opinion"
+    nav_match = re.match(
+        r"^\s*(?:\*\*)?[^\n|]{1,24}(?:\s*\|\s*[^\n|]{1,24}){2,}(?:\*\*)?\s*\n+",
+        markdown,
+    )
+    if nav_match:
+        markdown = markdown[nav_match.end():]
     if author:
         escaped = re.escape(author.strip())
         markdown = re.sub(
@@ -950,6 +957,26 @@ async def _extract_and_save(
         if (isWebflow) {
             document.querySelectorAll('.u-rich-text-blog style, .u-rich-text-blog script, .w-richtext style, .w-richtext script').forEach(el => el.remove());
         }
+
+        // Remove platform chrome that leaks into the article container:
+        // Substack "Read more" digest embeds (recommended posts) and
+        // publication nav strips rendered inside the body (e.g. "America | Tech | Opinion").
+        [
+            '[class*="digestPostEmbed"]', '[class*="digest-post-embed"]',
+            '[class*="readMore"]', '[class*="read-more"]',
+            '[class*="recirculation"]', '[class*="relatedPosts"]',
+            '[class*="related-posts"]', '[class*="subscribeWidget"]',
+            '.subscription-widget-wrap',
+        ].forEach(sel => document.querySelectorAll(sel).forEach(el => el.remove()));
+        document.querySelectorAll('p, div, span').forEach(el => {
+            if (el.querySelector('p, div, img')) return;
+            const t = (el.innerText || '').trim();
+            if (!t || t.length > 120 || /[.!?。！？]$/.test(t)) return;
+            const parts = t.split('|').map(s => s.trim());
+            if (parts.length >= 3 && parts.every(s => s.length > 0 && s.length <= 24 && !/[ ]{2,}/.test(s))) {
+                el.remove();
+            }
+        });
 
         // Site-specific selectors (priority order)
         const selectors = isWechat
@@ -1498,6 +1525,7 @@ async def _extract_and_save(
         "subscribe for more from",
         "discover more from",
         "this newsletter is provided for informational purposes only",
+        "read full story",
     )
     noise_hits = [
         marker for marker in substack_noise

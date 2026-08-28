@@ -1,0 +1,28 @@
+{
+  "title": "You are not a model. Don’t price per token.",
+  "source_url": "https://www.a16z.news/p/you-are-not-a-model-dont-price-per",
+  "source_title": "You are not a model. Don’t price per token.",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "Charging per token is becoming the default for AI companies. For most AI applications, it is a mistake.",
+  "author": "Tugce Erten、Sarah Wang",
+  "date": "2026-08-27T22:02:04+08:00",
+  "content_length": 10566,
+  "image_count": 4,
+  "images": [
+    "images/img_01_12a7e385.png",
+    "images/img_03_867289fa.png",
+    "images/img_04_c222057b.png",
+    "images/img_05_6bfa8a0b.png"
+  ],
+  "fetched_at": "2026-08-28T11:20:39.560556",
+  "verification": {
+    "ok": true,
+    "source_sha256": "934719b5d29b04bbf50c97a7bf5b96fc1ecc5cbc88ae9fffdb2a003c764b1618",
+    "markdown_image_references": 4,
+    "unique_local_images": 4,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  },
+  "display_title": "You are not a model. Don’t price per token. / 你不是模型，别按 token 定价"
+}
