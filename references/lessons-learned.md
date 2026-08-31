@@ -163,29 +163,37 @@
 - **自检项**：Substack 工作包全文搜索 `Read full story`、`Discussion about`、站点栏目串须归零；正文图片数应与"浏览器 DOM 内 `.available-content` 的真实内容图数"一致，出现编号跳跃（如 01/03/04/05）时要逐张核对而非默认合理。
 - **判断噪音图的实用技巧**：无法读图时用 `sips -g pixelWidth -g pixelHeight` 看尺寸——宽高比 >15:1 且高度 <100px 的多半是装饰分割线/横幅；再用 CDP 查该 img 的**祖先链**，仍在 `.body markup`（Substack 正文容器）内且无 recommend 类，则应作为正文图保留（本次 3098x158 的文末黑底横幅即正文图，不可误删）。
 
-#### L041: Lenny's Newsletter 模版段未被抓取层过滤，且不能在双语阶段补删（2026-08-28，自检发现）
+#### L041: Lenny's Newsletter 模版段未被抓取层过滤，且不能在双语阶段补删（2026-08-28，自检发现；2026-08-31 落地）
 - **问题**：抓取 `lennysnewsletter.com` 后，`source.md` 混入四段 newsletter 固定模版：
   ①开场 `👋 Hey there, I’m Lenny. Each week, I share…` 自我介绍+栏目串；
   ②`P.S. Get a full free year of Cursor, Notion, Replit… by becoming an Insider subscriber` 订阅福利；
   ③文末 `If you’re finding this newsletter valuable, share it with a friend, and consider subscribing`；
   ④`Sincerely,\n\nLenny 👋` 署名。`verification.platform_noise_hits` 为空——词表只覆盖
   `subscribe/recommend/disclaimer` 祖先 class，这些模版段在 `.available-content` 内部且无噪音 class。
+- **Community Wisdom 变体（2026-08-31）**：该栏目由 Kiyani 编辑，文末不是 Lenny 署名，而是
+  `If anyone in your life would benefit from this newsletter…` 礼品订阅号召 +
+  `[Give a gift subscription]` + `Kiyani 👋`。正文里的「gift」可能夹零宽空格，
+  硬校验应同时覆盖链接文案 `give a gift subscription` 与段落标记
+  `would benefit from this newsletter`。
 - **本次为什么没删**：`trans-doc-to-md` 的 `bilingual_validate.py` 要求**源文段落零丢失**
   （`validate_bilingual_source` 对每个 ≥5 token 段落做子串/令牌/相似度 0.92 校验）。
   在双语阶段删掉这些段会直接判「疑似缺少源文段落」而失败。**噪音必须在抓取层处理。**
-- **正确做法（待 fetch_article.py 落地，本次未改脚本）**：
-  1. DOM 层：Substack 正文提取前剔除 Lenny 固定开场段（`👋 Hey there, I’m Lenny` 所在段落）
-     与以 `P.S. Get a full free year of` 开头的段落；文末剔除 `If you’re finding this newsletter valuable`
-      段落及紧随的 `Sincerely,` + `Lenny 👋`。
-  2. 文本层兜底：噪音词表补 `👋 Hey there, I’m Lenny`、`Get a full free year of`、
-     `If you’re finding this newsletter valuable`、`Sincerely,`；**加词表前必须先加 DOM 过滤**，
-     否则硬校验会立刻把未清理的抓取判为 `ok=false`。
-  3. 保留正文性质的结尾致谢（如 `*Thanks, Cliff! For more, check out Vocation.*`），它属于作者内容。
+- **正确做法（已固化到 `fetch_article.py`）**：
+  1. DOM 层：Substack 正文提取前剔除 Lenny 固定开场段（`👋 Hey there, I’m Lenny` /
+     `👋 Hello and welcome to this week’s edition`）、`P.S. Get a full free year of`、
+     `If you’re finding this newsletter valuable`、`If anyone in your life would benefit from this newsletter`、
+     `Give a gift subscription` 链接，以及文末 `Sincerely,` / `Name 👋` 署名。
+  2. 文本层兜底：`_strip_substack_archive_noise` 同步删除上述段落；噪音词表补
+     `👋 hey there, i’m lenny`、`a full free year of`、`finding this newsletter valuable`、
+     `would benefit from this newsletter`、`give a gift subscription`。
+  3. 保留正文性质的结尾致谢（如 `*Thanks, Cliff! For more, check out Vocation.*`、
+     `*Have a fulfilling and productive week*`），它们属于作者内容。
 - **判断原则**：newsletter 站点（Lenny、a16z.news 等）的「订阅组件」不止是 widget，
   作者固定开场白/福利 P.S./文末号召同样是平台噪音；但它们一旦进入 `source.md`，
   就只能在抓取层修，不能在双语层删。
 - **自检项**：Substack 工作包全文搜索 `👋 Hey there`、`a full free year of`、
-  `finding this newsletter valuable` 须归零；若未归零且校验器要求段落完整，
+  `finding this newsletter valuable`、`would benefit from this newsletter`、
+  `Give a gift subscription` 须归零；若未归零且校验器要求段落完整，
   回到抓取层清理后重抓，禁止在终稿里删段落。
 
 #### L039: 含裸 URL 的长行会因乐享 clean 双写链接而锚点失配（2026-08-27，自检发现）
@@ -599,6 +607,7 @@
 | 2026-08-27 | NYT 双语稿含裸 URL 长行首次上传 VERIFY_ERROR（乐享 clean 把 URL 双写成 [url](url)） | 含裸 URL 行保持 plain <80 字符或 URL 放行尾；失败复用 entry_id 覆盖重传（L039） | SKILL.md Step 4, lessons-learned.md |
 | 2026-08-28 | a16z.news 抓取漏掉 Substack 新版推荐卡（digestPostEmbed）与站点栏目串，硬校验词表未覆盖 | DOM 层前缀选择器剔除推荐/复投容器；`|` 分隔短栏目串通用删除规则；噪音词表补 read full story（L040） | fetch_article.py, lessons-learned.md |
 | 2026-08-28 | Lenny's Newsletter 固定开场白/订阅福利 P.S./文末号召留在 source.md，双语阶段却删不掉（校验器要求源文段落零丢失） | 此类噪音只能在抓取层过滤；加词表前必须先加 DOM 过滤；作者结尾致谢属正文需保留（L041） | lessons-learned.md（待 fetch_article.py 落地） |
+| 2026-08-31 | Community Wisdom 199 转存时落地 L041，并发现礼品订阅号召 + `Name 👋` 署名变体 | DOM+文本层过滤 Lenny/Community Wisdom 模版；词表补 gift subscription / would benefit from this newsletter | fetch_article.py, SKILL.md 4.6.2, lessons-learned.md |
 
 ---
 

@@ -919,6 +919,57 @@ def _strip_substack_archive_noise(markdown: str, author: str = "") -> str:
             count=1,
             flags=re.MULTILINE | re.IGNORECASE,
         )
+    # Lenny's Newsletter fixed intro / perk / closing CTA (L041)
+    markdown = re.sub(
+        r"^👋\s*Hey there,\s*I[’']m Lenny\.[^\n]*(?:\n(?!\n)[^\n]*)*\n+",
+        "",
+        markdown,
+        count=1,
+    )
+    markdown = re.sub(
+        r"^👋\s*Hello and welcome to this week[’']s edition[^\n]*(?:\n(?!\n)[^\n]*)*\n+",
+        "",
+        markdown,
+        count=1,
+    )
+    markdown = re.sub(
+        r"^P\.S\.\s*Get a full free year of[^\n]*\n+",
+        "",
+        markdown,
+        flags=re.MULTILINE,
+    )
+    markdown = re.sub(
+        r"\nIf you[’']re finding this newsletter valuable[^\n]*\n+"
+        r"(?:\n?Sincerely,?\s*\n+\n?Lenny\s*👋[^\n]*\n*)?",
+        "\n",
+        markdown,
+        flags=re.IGNORECASE,
+    )
+    markdown = re.sub(
+        r"\nSincerely,?\s*\n+\n?Lenny\s*👋[^\n]*\s*$",
+        "\n",
+        markdown,
+        flags=re.IGNORECASE,
+    )
+    markdown = re.sub(
+        r"\n\*\*If anyone in your life would benefit from this newsletter[^\n]*\n+"
+        r"(?:\[[^\]]*gift subscription[^\]]*\]\([^)]+\)\n*)?"
+        r"(?:[A-Za-z][A-Za-z .'-]{0,40}\s*👋\s*)?$",
+        "\n",
+        markdown,
+        flags=re.IGNORECASE,
+    )
+    markdown = re.sub(
+        r"\n\[Give a gift subscription\]\([^)]+\)\s*$",
+        "\n",
+        markdown,
+        flags=re.IGNORECASE,
+    )
+    markdown = re.sub(
+        r"\n[A-Za-z][A-Za-z .'-]{0,40}\s*👋\s*$",
+        "\n",
+        markdown,
+    )
     return markdown.strip()
 
 
@@ -975,6 +1026,31 @@ async def _extract_and_save(
             const parts = t.split('|').map(s => s.trim());
             if (parts.length >= 3 && parts.every(s => s.length > 0 && s.length <= 24 && !/[ ]{2,}/.test(s))) {
                 el.remove();
+            }
+        });
+
+        // Lenny's Newsletter fixed intro / perk P.S. / closing CTA (L041).
+        // Must strip in DOM before markdown conversion; bilingual validation
+        // forbids deleting source paragraphs later.
+        const lennyNoiseRe = /^(👋\\s*Hey there,\\s*I[’']m Lenny|👋\\s*Hello and welcome to this week[’']s edition|P\\.S\\.\\s*Get a full free year of|If you[’']re finding this newsletter valuable|If anyone in your life would benefit from this newsletter)/i;
+        const sincerelyRe = /^Sincerely,?\\s*$/i;
+        const authorWaveRe = /^[A-Za-z][A-Za-z .'-]{0,40}\\s*👋\\s*$/;
+        const giftLinkRe = /^Give a gift subscription/i;
+        document.querySelectorAll('p, div, a').forEach(el => {
+            if (el.querySelector('p, div, img')) return;
+            const t = (el.innerText || '').replace(/\\s+/g, ' ').trim();
+            if (!t) return;
+            if (lennyNoiseRe.test(t) || giftLinkRe.test(t)) {
+                el.remove();
+                return;
+            }
+            if (sincerelyRe.test(t) || authorWaveRe.test(t)) {
+                const n = el.nextElementSibling;
+                el.remove();
+                if (n) {
+                    const nt = (n.innerText || '').replace(/\\s+/g, ' ').trim();
+                    if (authorWaveRe.test(nt) && nt.length < 40) n.remove();
+                }
             }
         });
 
@@ -1526,6 +1602,12 @@ async def _extract_and_save(
         "discover more from",
         "this newsletter is provided for informational purposes only",
         "read full story",
+        "👋 hey there, i’m lenny",
+        "👋 hey there, i'm lenny",
+        "a full free year of",
+        "finding this newsletter valuable",
+        "would benefit from this newsletter",
+        "give a gift subscription",
     )
     noise_hits = [
         marker for marker in substack_noise

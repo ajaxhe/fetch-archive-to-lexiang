@@ -1,0 +1,27 @@
+{
+  "title": "🧠 Community Wisdom: Building without clear PM requirements, selling a product before building it, pricing fast-moving B2B SaaS, a year of job hunting, and more",
+  "display_title": "Community Wisdom: Building without clear PM requirements / 社区智囊：没有清晰 PM 需求也能开发",
+  "source_url": "https://www.lennysnewsletter.com/p/community-wisdom-building-without",
+  "source_title": "🧠 Community Wisdom: Building without clear PM requirements, selling a product before building it, pricing fast-moving B2B SaaS, a year of job hunting, and more",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "Community Wisdom 199",
+  "author": "Kiyani",
+  "date": "2026-08-30T02:59:48+08:00",
+  "parent_id": "ffda996f435a47bdb57bcdf156fc1f23",
+  "image_count": 3,
+  "images": [
+    "images/img_01_5d9be694.png",
+    "images/img_02_f0d9cdeb.png",
+    "images/img_03_8251737f.png"
+  ],
+  "fetched_at": "2026-08-31T16:23:00.467568",
+  "verification": {
+    "ok": true,
+    "source_sha256": "75bb58cdb01cf5970b6feece9a82b417c79e9ffb2ae873e8fa0a16978ea4c9ed",
+    "markdown_image_references": 3,
+    "unique_local_images": 3,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}

@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.6.1"
+version: "4.6.2"
 author: ajaxhe
 license: MIT
 category: research
