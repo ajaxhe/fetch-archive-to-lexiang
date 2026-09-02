@@ -196,6 +196,49 @@
   `Give a gift subscription` 须归零；若未归零且校验器要求段落完整，
   回到抓取层清理后重抓，禁止在终稿里删段落。
 
+#### L042: Django 博客无 `article`/`main` 时 Markdown 转空，且 alt 含 `]` 会误删图（2026-09-02，simonwillison.net 自检发现）
+- **问题**：抓取 `simonwillison.net` 演讲图文时，日志显示正文 38137 字符、下载 88 张图，但 `source.md` 只有标题，`image_count=0`，`verification.ok=true`。第二次修好容器后，标题又变成站点名 “Simon Willison’s Weblog”；含代码/括号的幻灯片 alt 被 `!\[[^\]]*\]` 截断，引用图被当成未引用而删除。
+- **根因**：
+  1. 该站正文在 `.entry.entryPage` / `[data-permalink-context]`，没有 `article` 或 `main`。提取阶段回退到 `body`，Markdown 转换选择器找不到容器直接 `return ''`，三处选择器不一致。
+  2. 文章标题是 `.entry h2` / `og:title` / `document.title`；通用 `h1` 先命中站点 masthead。
+  3. 幻灯片 alt 常含 `]`（如 `Books3 [4.5%]`、对抗后缀 `](`），旧引用正则提前闭合，未计入的本地图被 unlink。
+- **正确做法（已固化到 `fetch_article.py`）**：
+  1. 提取 / 枚图 / 转 Markdown 统一加入 `.entry`、`.entryPage`、`[data-permalink-context]`。
+  2. 标题选择器把 `.entry h2` 放在通用 `h1` 之前；站点 H1 与 `og:title` 不一致时用 `og:title`。
+  3. 写出图片 alt 前去掉 `[]`；引用对账改为 `\((images/[^)\s]+)\)`；仍有远程图片 URL 则失败。
+  4. 提取正文 ≥500 字符但 Markdown 正文 <200 字符时硬失败，禁止空壳包过检。
+  5. 图片下载失败重试 3 次，避免偶发 DNS 漏图。
+- **自检项**：`verification.ok=true` 且 `content_length` 与 `source.md` 正文长度同量级；标题不是站点名；`markdown_image_references` 覆盖全部正文幻灯片；无 `https://static.` 远程图。
+- **同步更新**：`fetch_article.py`；SKILL.md 4.6.3 Step 4。
+
+#### L044: Substack 自定义域未入白名单会选错容器，头像以远程 URL 残留（2026-09-02，latent.space 自检发现）
+- **问题**：抓取 `www.latent.space`（Substack 自定义域）时，首次失败：`Markdown 仍含远程图片 URL`，残留全是 `w_32`/`w_36` 头像和推荐缩略图。正文提取 12525 字符、下了 5 张图；锁定 `.available-content` 后只有 11716 字符、4 张正文图。
+- **根因**：
+  1. `_is_substack_site` 只认 hostname 白名单（`substack.com`、`a16z.news`、Lenny 等），不含 `latent.space`。
+  2. `is_substack=false` 时，提取 / 枚图 / 转 Markdown 按最长容器回退到 `article`/`main`，混入嘉宾卡、评论头像和 “Ready for more” 缩略图（L034 同类复发）。
+  3. 下载过滤器丢掉 <50px 头像，但 Markdown 转换仍把未入 `imageMap` 的 `img.src` 写成远程 URL，被 L042 硬校验拦住。
+- **正确做法（已固化到 `fetch_article.py`）**：
+  1. 白名单补 `latent.space` / `www.latent.space`。
+  2. 页面加载后若 hostname 未命中，再用 DOM 检测：存在 `.available-content` 且有 `substackcdn` / generator=Substack，则升为 Substack 并锁定正文容器。
+  3. 转换阶段对未下载的小头像（宽高 <50 或 CDN `w_3x,h_3x`）直接跳过，不再写出远程图片 URL；真正漏下的正文图仍保留远程 URL 以便硬失败。
+- **自检项**：`latent.space` 及未知 Substack 自定义域必须走 `.available-content`；`verification.ok=true` 且无 `substackcdn` 远程图；正文图数等于 `.body.markup` 内 captioned 图，不是 article 全页图数。
+- **同步更新**：`fetch_article.py`；SKILL.md 4.6.5 Step 4。
+
+#### L043: OpenAPI 创建日期目录不会置顶，必须再用 MCP move（2026-09-02，用户指出）
+- **问题**：新建 `2026-09-02` folder 后，知识库目录树顶部仍是 `2026-09-01`，新目录落在底部。
+- **根因**：
+  1. OpenAPI `POST /kb/entries?before=<首位ID>` 能创建 folder，但**忽略排序参数**。
+  2. OpenAPI `/entries/{id}/move` 的 JSON:API 体不稳定，曾返回空响应却未改顺序。
+  3. Skill 把“`before=` 置顶”写在创建步骤上，Agent 以为创建即置顶，没有事后核对父目录第一项。
+  4. 上传器 `--pin` 只置顶**页面**，不置顶日期 folder。
+- **正确做法（强制）**：
+  1. OpenAPI 只负责创建 folder。
+  2. 创建后立刻用与 `--pin` 相同的 MCP：`entry_move_entry(entry_id, parent_id=root, before=当前第一兄弟)`。
+  3. 封装为 `scripts/pin_lexiang_entry.py`；成功标准是再列父目录时第一项等于新 folder。
+  4. L005 的 `before=` 仍然正确，但必须打在 **move** 上，不是 create query string。
+- **自检项**：新建日期目录的交付记录必须包含置顶后的父目录前 3 项，且当天 folder 在第一位。
+- **同步更新**：SKILL.md 4.6.4 Step 3；lexiang-upload.md；`scripts/pin_lexiang_entry.py`。
+
 #### L039: 含裸 URL 的长行会因乐享 clean 双写链接而锚点失配（2026-08-27，自检发现）
 - **问题**：NYT 文章双语稿首次上传报 `VERIFY_ERROR: 缺少长段落锚点`，失败行为
   `> 作者页 / Author: https://www.nytimes.com/by/pablo-robles · 发布时间 / Published: 2026-08-26T16:53:48-04:00`。
@@ -540,7 +583,7 @@
 
 #### L005: `after=""` 不是置顶
 - **问题**：API 文档说 `after=""` 会排到最前面，实际是排到最后面
-- **修复**：必须用 `before=<第一个条目ID>` 来置顶
+- **修复**：必须用 `before=<第一个条目ID>` 来置顶。**2026-09-02 补充**：该参数只对 MCP `entry_move_entry` 有效；OpenAPI 创建 folder 时带 `?before=` 不会改顺序，见 L043。
 
 #### L006: block_create_block_descendant 的 index 参数必须是字符串
 - **问题**：传整数 `index: 81` 会参数校验失败
@@ -608,6 +651,9 @@
 | 2026-08-28 | a16z.news 抓取漏掉 Substack 新版推荐卡（digestPostEmbed）与站点栏目串，硬校验词表未覆盖 | DOM 层前缀选择器剔除推荐/复投容器；`|` 分隔短栏目串通用删除规则；噪音词表补 read full story（L040） | fetch_article.py, lessons-learned.md |
 | 2026-08-28 | Lenny's Newsletter 固定开场白/订阅福利 P.S./文末号召留在 source.md，双语阶段却删不掉（校验器要求源文段落零丢失） | 此类噪音只能在抓取层过滤；加词表前必须先加 DOM 过滤；作者结尾致谢属正文需保留（L041） | lessons-learned.md（待 fetch_article.py 落地） |
 | 2026-08-31 | Community Wisdom 199 转存时落地 L041，并发现礼品订阅号召 + `Name 👋` 署名变体 | DOM+文本层过滤 Lenny/Community Wisdom 模版；词表补 gift subscription / would benefit from this newsletter | fetch_article.py, SKILL.md 4.6.2, lessons-learned.md |
+| 2026-09-02 | simonwillison.net 演讲图文：无 article/main 导致 MD 转空；站点 H1 冒充标题；alt 含 `]` 误删图 | 统一 `.entry` 容器；标题改 og:title/entry h2；alt 去括号；空 MD 硬失败；下载重试 | fetch_article.py, SKILL.md 4.6.3, lessons-learned.md |
+| 2026-09-02 | 用户指出新建日期目录未出现在目录树顶部 | OpenAPI 创建不改序；创建后必须 MCP `entry_move_entry before=首位兄弟` 并核对第一项 | pin_lexiang_entry.py, SKILL.md 4.6.4, lexiang-upload.md, lessons-learned.md |
+| 2026-09-02 | latent.space 未识别为 Substack，最长容器混入头像远程 URL | 自定义域白名单 + 页面级 `.available-content`/substackcdn 检测；跳过未下载小头像 | fetch_article.py, SKILL.md 4.6.5, lessons-learned.md |
 
 ---
 

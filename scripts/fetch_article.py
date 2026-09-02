@@ -466,6 +466,8 @@ def _is_substack_site(url: str) -> bool:
         "substack.com",
         "a16z.news",
         "www.a16z.news",
+        "latent.space",
+        "www.latent.space",
         "lennysnewsletter.com",
         "www.lennysnewsletter.com",
         "creatoreconomy.so",
@@ -480,6 +482,26 @@ def _is_substack_site(url: str) -> bool:
     if "substack.com" in hostname:
         return True
     return False
+
+
+async def _detect_substack_page(page) -> bool:
+    """Detect Substack custom domains after load, not just by hostname allowlist."""
+    try:
+        return bool(
+            await page.evaluate(
+                """() => {
+                    if (!document.querySelector('.available-content')) return false;
+                    if (document.querySelector(
+                        'img[src*="substackcdn.com"], link[href*="substackcdn.com"], link[href*="substack.com"]'
+                    )) return true;
+                    const gen = document.querySelector('meta[name="generator"]');
+                    if (gen && /substack/i.test(gen.getAttribute('content') || '')) return true;
+                    return !!document.querySelector('script[src*="substack"], [class*="substack"]');
+                }"""
+            )
+        )
+    except Exception:
+        return False
 
 
 def _is_wechat_article(url: str) -> bool:
@@ -1063,7 +1085,9 @@ async def _extract_and_save(
                     ? ['.u-rich-text-blog', '.w-richtext', 'article', 'main']
                     : [
                         '.available-content', '.post-content', 'article .body',
-                        'article', '.entry-content', '[class*="body"]'
+                        'article', '.entry-content', '.entry', '.entryPage',
+                        '[data-permalink-context]', '#quarto-document-content',
+                        'main', '[class*="body"]'
                     ];
         
         let articleEl = isSubstack
@@ -1118,6 +1142,7 @@ async def _extract_and_save(
         }
         if (!title) {
             const titleSelectors = [
+                '.entry h2', '.entryPage h2', '[data-permalink-context] h2',
                 'h1.post-title', 'h1[class*="post-title"]', 'h1[class*="post"]',
                 'article h1', '.pencraft h1',
                 '[class*="title"] h1', '[class*="header"] h1',
@@ -1132,10 +1157,15 @@ async def _extract_and_save(
                 if (title) break;
             }
         }
-        // 回退到 meta 标签
+        // 回退到 meta 标签；站点 masthead H1 不能压过 og:title / document.title
+        const ogTitleEl = document.querySelector('meta[property="og:title"]');
+        const ogTitle = ogTitleEl ? (ogTitleEl.getAttribute('content') || '').trim() : '';
+        const siteH1 = ((document.querySelector('h1') || {}).innerText || '').trim();
+        if (ogTitle && (!title || (title === siteH1 && ogTitle !== title))) {
+            title = ogTitle;
+        }
         if (!title) {
-            const ogTitle = document.querySelector('meta[property="og:title"]');
-            if (ogTitle) title = ogTitle.getAttribute('content') || '';
+            title = ogTitle;
         }
         if (!title) {
             const metaTitle = document.querySelector('meta[name="title"]');
@@ -1216,7 +1246,7 @@ async def _extract_and_save(
         }
         if (!date) {
             const dateEl = document.querySelector(
-                'time[datetime], time, .post-date, [data-testid="post-date"], [class*="publish-date"]'
+                'time[datetime], time, .post-date, .mobile-date, [data-testid="post-date"], [class*="publish-date"]'
             );
             date = dateEl ? (dateEl.getAttribute('datetime') || dateEl.innerText.trim()) : '';
         }
@@ -1269,7 +1299,7 @@ async def _extract_and_save(
             }
         }
         if (!articleEl) {
-            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '#quarto-document-content', 'main'];
+            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '.entry-content', '.entry', '.entryPage', '[data-permalink-context]', '#quarto-document-content', 'main'];
             let maxLen = 0;
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
@@ -1370,19 +1400,27 @@ async def _extract_and_save(
         filename = f"img_{i+1:02d}_{url_hash}{ext}"
         local_path = images_dir / filename
 
-        try:
-            response = await page.request.get(src)
-            if response.ok:
-                content_bytes = await response.body()
-                if len(content_bytes) > 500:
-                    local_path.write_bytes(content_bytes)
-                    # Auto-convert WebP/SVG to PNG for compatibility
-                    converted = _convert_image_format(local_path)
-                    fmt_note = " (→PNG)" if converted else ""
-                    print(f"  ✅ 图片 {i+1}/{len(image_elements)}: {filename} ({len(content_bytes)//1024}KB){fmt_note}")
-                    return src, f"images/{filename}"
-        except Exception as e:
-            print(f"  ⚠️  图片下载异常: {str(e)[:60]}")
+        last_error = ""
+        for attempt in range(3):
+            try:
+                response = await page.request.get(src)
+                if response.ok:
+                    content_bytes = await response.body()
+                    if len(content_bytes) > 500:
+                        local_path.write_bytes(content_bytes)
+                        # Auto-convert WebP/SVG to PNG for compatibility
+                        converted = _convert_image_format(local_path)
+                        fmt_note = " (→PNG)" if converted else ""
+                        print(f"  ✅ 图片 {i+1}/{len(image_elements)}: {filename} ({len(content_bytes)//1024}KB){fmt_note}")
+                        return src, f"images/{filename}"
+                    last_error = f"too small ({len(content_bytes)}B)"
+                else:
+                    last_error = f"HTTP {response.status}"
+            except Exception as e:
+                last_error = str(e)[:60]
+            if attempt < 2:
+                await page.wait_for_timeout(400 * (attempt + 1))
+        print(f"  ⚠️  图片下载异常: {last_error}")
         return None
 
     download_results = await asyncio.gather(*(
@@ -1416,7 +1454,7 @@ async def _extract_and_save(
             articleEl = document.querySelector('.u-rich-text-blog') || document.querySelector('.w-richtext');
         }
         if (!articleEl) {
-            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '#quarto-document-content', 'main'];
+            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '.entry-content', '.entry', '.entryPage', '[data-permalink-context]', '#quarto-document-content', 'main'];
             let maxLen = 0;
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
@@ -1444,7 +1482,9 @@ async def _extract_and_save(
             if (node.className && typeof node.className === 'string' && (
                 node.className.includes('subscription') || 
                 node.className.includes('paywall') ||
-                node.className.includes('footer')
+                node.className.includes('footer') ||
+                node.className.includes('mobile-date') ||
+                node.className.includes('edit-page-link')
             )) return '';
             if (isSubstack) {
                 const classes = String(node.className || '').toLowerCase();
@@ -1474,7 +1514,14 @@ async def _extract_and_save(
                     }
                     return '\\n# ' + h1Text + '\\n\\n';
                 }
-                case 'h2': return '\\n## ' + node.innerText.trim() + '\\n\\n';
+                case 'h2': {
+                    const h2Text = node.innerText.trim();
+                    if (!skippedFirstH1 && extractedTitle && h2Text === extractedTitle) {
+                        skippedFirstH1 = true;
+                        return '';
+                    }
+                    return '\\n## ' + h2Text + '\\n\\n';
+                }
                 case 'h3': return '\\n### ' + node.innerText.trim() + '\\n\\n';
                 case 'h4': return '\\n#### ' + node.innerText.trim() + '\\n\\n';
                 case 'h5': return '\\n##### ' + node.innerText.trim() + '\\n\\n';
@@ -1522,13 +1569,30 @@ async def _extract_and_save(
                     }
                     return text || children();
                 }
+                case 'iframe': {
+                    const src = node.getAttribute('src') || node.src || '';
+                    if (!src) return '';
+                    let href = src;
+                    const yt = src.match(/(?:youtube(?:-nocookie)?\\.com\\/embed\\/|youtu\\.be\\/)([A-Za-z0-9_-]+)/);
+                    if (yt) href = 'https://www.youtube.com/watch?v=' + yt[1];
+                    const label = node.getAttribute('title') || (yt ? 'Watch on YouTube' : href);
+                    return '\\n[' + label + '](' + href + ')\\n\\n';
+                }
                 case 'img': {
                     const src = node.src || node.getAttribute('data-src') || '';
                     const dataSrc = node.getAttribute('data-src') || '';
-                    const alt = node.alt || '';
+                    const alt = (node.alt || '').replace(/[\[\]]/g, '');
                     if (!src || src.includes('data:image/svg')) return '';
                     // Try matching imageMap with both src and data-src (WeChat uses data-src as key)
-                    const localPath = imageMap[src] || imageMap[dataSrc] || src;
+                    const localPath = imageMap[src] || imageMap[dataSrc];
+                    if (!localPath) {
+                        const w = node.naturalWidth || node.width || 0;
+                        const h = node.naturalHeight || node.height || 0;
+                        if ((w > 0 && w < 50 && h > 0 && h < 50) || /[,/]w_3[0-9],h_3[0-9]/.test(src)) {
+                            return '';
+                        }
+                        return '\\n![' + alt + '](' + src + ')\\n\\n';
+                    }
                     return '\\n![' + alt + '](' + localPath + ')\\n\\n';
                 }
                 case 'figure': {
@@ -1536,9 +1600,17 @@ async def _extract_and_save(
                     const caption = node.querySelector('figcaption');
                     if (img) {
                         const src = img.src || img.getAttribute('data-src') || '';
-                        const alt = img.alt || (caption ? caption.innerText.trim() : '');
+                        const alt = (img.alt || (caption ? caption.innerText.trim() : '')).replace(/[\[\]]/g, '');
                         if (!src || src.includes('data:image/svg')) return '';
-                        const localPath = imageMap[src] || src;
+                        const localPath = imageMap[src];
+                        if (!localPath) {
+                            const w = img.naturalWidth || img.width || 0;
+                            const h = img.naturalHeight || img.height || 0;
+                            if ((w > 0 && w < 50 && h > 0 && h < 50) || /[,/]w_3[0-9],h_3[0-9]/.test(src)) {
+                                return caption ? ('*' + caption.innerText.trim() + '*\\n\\n') : '';
+                            }
+                            return '\\n![' + alt + '](' + src + ')\\n\\n';
+                        }
                         let s = '\\n![' + alt + '](' + localPath + ')\\n';
                         if (caption) s += '*' + caption.innerText.trim() + '*\\n';
                         return s + '\\n';
@@ -1580,9 +1652,22 @@ async def _extract_and_save(
             article_data.get("author", ""),
         )
 
-    referenced_images = re.findall(
-        r"!\[[^\]]*\]\((images/[^)\s]+)\)", markdown
-    )
+    markdown_text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", markdown or "").strip()
+    extracted_len = len(article_data.get("content", "") or "")
+    if extracted_len >= 500 and len(markdown_text) < 200:
+        raise RuntimeError(
+            f"Markdown 转换结果过短（{len(markdown_text)} 字符），"
+            f"但提取正文有 {extracted_len} 字符。"
+            "通常是正文容器选择器在提取/转换阶段不一致。"
+        )
+
+    referenced_images = re.findall(r"\((images/[^)\s]+)\)", markdown)
+    remote_images = [
+        url for url in re.findall(r"\((https?://[^)\s]+)\)", markdown)
+        if re.search(r"\.(?:png|jpe?g|gif|webp)(?:\?|$)", url, re.I)
+    ]
+    if remote_images:
+        raise RuntimeError(f"Markdown 仍含远程图片 URL: {remote_images[:8]}")
     referenced_image_set = set(referenced_images)
     for local_rel in set(image_map.values()) - referenced_image_set:
         (output_path / local_rel).unlink(missing_ok=True)
@@ -1743,6 +1828,10 @@ async def fetch_article(
 
             # Wait for Cloudflare challenge if detected
             await _wait_for_cloudflare(page)
+
+            if not is_substack and await _detect_substack_page(page):
+                is_substack = True
+                print("📰 页面检测为 Substack 自定义域，锁定 .available-content")
 
             if is_substack:
                 await page.wait_for_function(
@@ -1911,6 +2000,10 @@ async def fetch_article(
 
         # Wait for Cloudflare challenge if detected
         await _wait_for_cloudflare(page)
+
+        if not is_substack and await _detect_substack_page(page):
+            is_substack = True
+            print("📰 页面检测为 Substack 自定义域，锁定 .available-content")
 
         # === WeChat article: no login needed, just wait for content ===
         if is_wechat:

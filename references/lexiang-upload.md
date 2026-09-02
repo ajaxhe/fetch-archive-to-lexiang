@@ -32,9 +32,12 @@
    （过滤参数是 `parent_id`，**不是** `parent_entry_id`，后者会返回 space 根列表）。
 3. 找到同名且 `entry_type=folder` 则复用；否则 `POST /cgi-bin/v1/kb/entries?space_id=X` 创建：
    `body={"data":{"attributes":{"name":"YYYY-MM-DD","entry_type":"folder"},"relationships":{"parent_entry":{"data":{"type":"entry","id":<父目录ID}}}}}`
-   （folder 无需 `state` 字段）。
+   （folder 无需 `state` 字段）。**创建请求上的 `?before=` 不会置顶 folder。**
 4. 标题子目录同样用 OpenAPI 建，再拿其 ID 作为 `--parent-id` 传给上传器。
-5. 置顶用上传器 `--pin`（MCP，同 company）；不要用 `after=""`。
+5. 页面置顶用上传器 `--pin`。新建日期/标题 folder 置顶必须另走
+   `scripts/pin_lexiang_entry.py`（uploader 同 company 的 MCP
+   `entry_move_entry`，`before=<当前第一条目 ID>`）。不要用 `after=""`，
+   也不要指望 OpenAPI 创建参数改排序。创建后立刻列出父目录，确认第一项是新 folder。
 
 ## 公共上传依赖
 

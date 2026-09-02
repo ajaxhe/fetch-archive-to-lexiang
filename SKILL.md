@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.6.2"
+version: "4.6.5"
 author: ajaxhe
 license: MIT
 category: research
@@ -157,8 +157,18 @@ name = "<可选；已可靠获知标题时才传，禁止为取标题而抓取�
 `file_create_hyperlink`；不得进入下方 Markdown uploader 流程。
 
 1. 获取目标知识库 `root_entry_id`。
-2. 查询并复用当天 `YYYY-MM-DD` folder；不存在才创建，使用
-   `before=<当前第一条目 ID>` 置顶。
+2. 查询并复用当天 `YYYY-MM-DD` folder；不存在才用 OpenAPI 创建。
+   **创建后必须立刻置顶**：OpenAPI `POST ?before=` 不会改 folder 顺序。
+   用与 uploader `--pin` 相同的 MCP `entry_move_entry`：
+
+```bash
+python3 scripts/pin_lexiang_entry.py \
+  --entry-id "<新建日期目录ID>" \
+  --parent-id "<知识库 root_entry_id>" \
+  --json
+```
+
+   自检：父目录子条目第一项必须是当天 folder。复用已有日期目录时不必再移。
 3. 视频/播客在日期目录下查询并复用 `<原文标题>` 文件夹。
 4. 在目标目录内按规范化标题、来源 URL 和条目类型去重；确认是同一来源后才覆盖。
 5. 上传前记录目标目录子条目快照；本次任务只允许新增或更新“最终 Markdown 页面 +
@@ -236,6 +246,10 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ Every.to：最终 Markdown 去掉 `[(N)](#marginalia-cite-N)` 哈希链接，只留 `[(N)]`，否则 uploader 长段落锚点会对不上
 □ 含裸 URL 的行 plain 长度 <80 字符或 URL 在行尾；≥80 字符锚点禁止跨越 URL 结尾边界（乐享 clean 会把 URL 双写成 [url](url)，见 L039）
 □ MCP 在 CSIG 个人知识库建目录时，uploader 必须用 `--profile csig`；默认凭证的 company_from 与 MCP 不一致会报条目不存在
+□ 新建日期目录后已用 `pin_lexiang_entry.py` / MCP `entry_move_entry before=首位兄弟` 置顶；父目录第一项是当天 `YYYY-MM-DD`，不是落在树底部
+□ simonwillison.net / Django 博文：正文容器是 `.entry` / `[data-permalink-context]`，不是 `article`/`main`；标题优先 `.entry h2` 与 `og:title`，禁止用站点 masthead H1
+□ 提取正文很长但 Markdown 转换结果过短必须报错重抓；图片 alt 不得含未转义 `[]`，引用对账不能用 `!\[[^\]]*\]`
+□ Substack 自定义域（如 latent.space）必须被识别为 Substack；白名单未命中时，页面出现 `.available-content` + substackcdn 即锁定正文容器，禁止回退到更长的 article/main；未下载的 32×32 头像不得以远程 URL 残留在 Markdown
 ```
 
 ## Step 5：自省
