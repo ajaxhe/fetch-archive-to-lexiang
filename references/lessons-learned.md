@@ -263,6 +263,16 @@
   其他文本的行必须拆分；uploader `verified=true` 才算交付。
 - **同步更新**：SKILL.md Step 4 自检清单。
 
+#### L045: 乐享原生表格最多 10 列，宽矩阵必须先拆表再上传（2026-09-08，自检发现）
+- **问题**：arXiv 论文 Table 8（Web 能力矩阵）有 13 列。uploader 写入时报
+  `table.column_size: value must be greater than 0 and less than or equal to 10`。
+  页面已创建但未回滚，需复用原 `entry_id` 覆盖。
+- **根因**：乐享 `table.column_size` 硬限制为 10；学术论文对照矩阵、双层表头常超过此限。
+- **正确做法**：上传前检查每张 Markdown/HTML 表的列数；超过 10 列按语义拆成多张
+  ≤10 列的表（如工作面/生命周期一张，运行时证据/判定器一张），保留全部单元格英文。
+  失败页按 L032 用 `--entry-id` 覆盖，禁止再新建一页。
+- **自检项**：终稿每张表列数 ≤10；uploader 不再报 `column_size`。
+
 #### L038: Every.to 边注哈希链接会让 uploader 对账失败；MCP 与默认 uploader 不在同一公司（2026-08-25，自检发现）
 - **问题**：`After Automation` 上传后 `VERIFY_ERROR`，缺少长段落锚点。预览里出现
   `1 marginalia-cite-1`。同时默认 uploader 报 MCP 刚创建的日期目录「不存在」。
@@ -654,6 +664,7 @@
 | 2026-09-02 | simonwillison.net 演讲图文：无 article/main 导致 MD 转空；站点 H1 冒充标题；alt 含 `]` 误删图 | 统一 `.entry` 容器；标题改 og:title/entry h2；alt 去括号；空 MD 硬失败；下载重试 | fetch_article.py, SKILL.md 4.6.3, lessons-learned.md |
 | 2026-09-02 | 用户指出新建日期目录未出现在目录树顶部 | OpenAPI 创建不改序；创建后必须 MCP `entry_move_entry before=首位兄弟` 并核对第一项 | pin_lexiang_entry.py, SKILL.md 4.6.4, lexiang-upload.md, lessons-learned.md |
 | 2026-09-02 | latent.space 未识别为 Substack，最长容器混入头像远程 URL | 自定义域白名单 + 页面级 `.available-content`/substackcdn 检测；跳过未下载小头像 | fetch_article.py, SKILL.md 4.6.5, lessons-learned.md |
+| 2026-09-08 | arXiv 论文 Table 8 共 13 列，乐享拒绝 column_size>10 | 宽表按语义拆成多张 ≤10 列表；失败页复用 entry_id 覆盖（L045） | lessons-learned.md |
 
 ---
 
