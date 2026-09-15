@@ -26,6 +26,11 @@
 > 目录（folder）创建/查询也必须走上传器凭证所在的 company：当前即 贾维斯(`e6c565`)，
 > 因此用 **OpenAPI** 而非 csig 的 MCP `entry_*` 工具（后者跨 company 会 403）。
 > OpenAPI 助手来自 `scripts/upload_video_via_openapi.py`（`load_config`/`get_access_token`）。
+>
+> **2026-09-15 补充（L048）**：先跑一次 `mcp__lexiang__whoami`。若其 `company.code` 与
+> `config.json` 的 `target_space.company_from` **相同**，则 MCP 与上传器同 company，
+> 日期目录可直接用 MCP `entry_create_entry`(`entry_type=folder`) 创建，**不依赖 OpenAPI 凭证**；
+> 但创建同样不会置顶，与 OpenAPI 路径一样必须再 `pin_lexiang_entry.py`。
 
 1. `space_id` 取 config.json 的 `target_space`（`b6013f64`），`root_entry_id` 用 space 根。
 2. 列子目录：`GET /cgi-bin/v1/kb/entries?space_id=X&parent_id=<folder_id>&page=1&page_size=50`

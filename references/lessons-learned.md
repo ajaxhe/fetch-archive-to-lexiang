@@ -38,6 +38,43 @@
   4. **回报方式**：向用户说明"这是 X 类问题，我已全文排查到 N 处并全部修复"，而非只说"这一处修好了"。
 - **自检项**：用户就同一类问题开口 ≥2 次时，本轮交付必须包含：①全文同类清单 ②全部实例已修 ③skill 已自动更新。三者缺一即未完成。
 
+#### L047:【同类第三次复发】角色标签整体/局部反转——口吻打分不可作为主判据（2026-09-12，自检发现）
+
+- **背景**：厚雪长波「互联网泡沫、量化崛起、沃什首秀」2h12m 播客归档。转录完成后自检发现
+  **主持人/嘉宾标签大面积反转**：念开场白「各位听友大家好，欢迎收听雪球出品的厚雪长波……
+  我是主持人七」的说话人被标成「嘉宾」，而真正回答问题的许仲翔被标成「主持人」。
+  逐 chunk 核对后是**混合状态**：14 个切片中 9 个反向、5 个正确。这是 L027 → L029 之后
+  同一类问题（说话人角色）的**第三次**出现，按 L020 元规则必须全文同类排查并固化。
+- **根因（三层）**：
+  1. **开场锚点被冷开场骗了**：`intro_host_sid` 取「前 45 秒累计发言时长最长的说话人」。
+     本集是**冷开场**——嘉宾的精彩片段先播（00:10–00:29），主持人的正式开场白在 00:33 才出现，
+     于是锚点选中了嘉宾，`scores[intro_host_sid] += 100` 把错误角色放大到整个首切片。
+  2. **口吻打分本身噪声太大**：`_host_score` 的「你们/你觉得/对不对」和 `_guest_score` 的
+     「我们公司/我们团队」在真实对话里高度混用（主持人也常自述「我们这期」，嘉宾也会说「您」），
+     逐 chunk 独立打分必然抖动，所以出现「有的 chunk 对、有的 chunk 反」。
+  3. **没有交叉验证**：角色只在文本层判定，从未与「谁话多」这一结构性事实对账。
+- **正确做法（已固化到 `podcast_to_lexiang.py`）**：
+  1. **开场白文本锚点优先**：先扫描首切片里含 `欢迎收听` / `我是主持人` / `今天的主播` 的句子，
+     该句说话人即主播；只有找不到时才回退「45 秒时长统计」。
+  2. **话量主导者 = 嘉宾（新的主判据）**：按切片统计各说话人**累计字数**，取主导者为嘉宾；
+     为避免给「主持人更话痨」的节目判错，只在主导者字数 ≥ 次席 **1.3 倍**时才采纳，
+     否则退回口吻打分。本集各切片比值 1.39–5.31，14/14 与人工核对一致。
+  3. **主播 = 除嘉宾外话量最多的说话人**；若锚点主播存在且与嘉宾不同，锚点优先。
+  4. **碎片跟随**：少于 2 句的孤立 spk（如仅一句「嗯的。」）不参与判定，直接跟随前一段落的角色，
+     避免出现第三种角色。
+  5. **量化自检**：`guest` 平均段长应显著大于 `host`（本集 174 字 vs 68 字，约 2.6 倍）。
+     若两者接近或倒挂，说明判定失败，必须人工抽检后再交付。
+- **修复手法（省时间）**：ASR 已跑完（本集耗时约 59 分钟）时**不要重跑转录**。
+  `segments.json` 保留了 `spk`，写一个短脚本 `import podcast_to_lexiang` 直接调用
+  `remap_speaker_roles` → `merge_by_speaker` → `generate_markdown` 即可重新生成 `source.md`。
+  ⚠️ 重新生成时 `meta.json` 里只有 `source_url`，`generate_markdown` 读的是 `metadata["url"]`，
+  必须补 `meta["url"] = meta["source_url"]`，否则**「原始链接」行会静默消失**（核心规则 #2）。
+- **自检项**：交付前必须打印 `guest/host` 的段数与平均段长；再抽检首段（开场白应标主播）、
+  中段（问句应标主播、长答应标嘉宾）、末段（「感谢许博的参与」应标主播）三处。
+  同类问题已第三次复发，本条与 L027/L029 的自检项**合并执行，不得只做其一**。
+- **同步更新**：`podcast_to_lexiang.py`（新增 `_detect_intro_host_sid` / `_dominant_guest_sid`）；
+  `podcast-audio.md`；本文件。
+
 #### L029: 音视频访谈分段过碎与角色不明再次反馈 → 说话人优先分段必须端到端固化（2026-07-21）
 - **背景**：用户第二次指出同类问题：开场白和对话仍按短句切得过碎，同一个人的连续发言
   被拆成多个段落；文字稿没有稳定说明主持人和嘉宾身份。L027 虽已有播客规则，但 YouTube
@@ -149,6 +186,49 @@
 - **同步更新**：SKILL.md Step 4 自检清单 + pdf-processing.md Step 4；本文件。
 
 ### 🟡 P1 — 偶尔犯的错误（需要注意）
+
+#### L046: FunASR 依赖不全 + 本机 pip 无法解包 sdist → 播客转录在 import 阶段即失败（2026-09-12，实战踩坑）
+
+- **问题**：执行 `podcast_to_lexiang.py` 转录小宇宙 2h12m 播客时，下载/切片都成功，
+  但在 `from funasr import AutoModel` 直接崩：
+  `ModuleNotFoundError: No module named 'omegaconf'`。逐层补齐后暴露后续缺失：
+  `jieba / editdistance / kaldiio / oss2 / hydra-core / scipy / librosa / antlr4-python3-runtime / torchaudio`。
+  `torchaudio` 缺失会卡在 `funasr/utils/load_utils.py`，且 **cam++ 说话人分离强依赖
+  `torchaudio.compliance.kaldi`**，不能跳过。
+- **根因（两层）**：
+  1. **managed venv 只装了 funasr 本体**，没有装 funasr 的运行时依赖；脚本顶部注释里的
+     `pip install funasr torch torchaudio modelscope yt-dlp opencc-python-reimplemented`
+     并不完整，漏了 omegaconf/jieba/editdistance/kaldiio/oss2/hydra-core 等。
+  2. **本机 pip（25.3 与 26.2.1 均复现，非沙箱同样复现）无法解包任何 sdist**：
+     报 `ERROR: Could not install packages due to an OSError: EEXIST: file already exists,
+     mkdir '<tmp>/pip-install-XXXX/<pkg>_<hash>'`。只要包只有 `.tar.gz`（jieba、oss2、
+     antlr4-python3-runtime、editdistance）就必然失败；wheel 包正常。
+     `pip download` 同样失败。**与 TMPDIR、沙箱、pip 版本都无关。**
+- **正确做法（已验证可跑通）**：
+  1. **sdist 包手工落地**：用 `urllib` 从 `https://pypi.org/pypi/<pkg>/json` 取 sdist URL
+     下载 → `tar xzf` → 把顶层包目录直接 `cp -R` 进
+     `~/.workbuddy/binaries/python/envs/default/lib/python3.13/site-packages/`。
+     纯 Python 包（jieba / oss2 / antlr4）到此即可用。
+  2. **补 dist-info 让 pip 认为已满足**：手工建
+     `<Name>-<Ver>.dist-info/{METADATA,WHEEL,RECORD,INSTALLER}`（METADATA 只需
+     `Metadata-Version/Name/Version`），否则后续 `pip install omegaconf` 会再次尝试装
+     sdist 依赖而重复失败。
+  3. **C 扩展（editdistance）手工编译**：该 sdist 是 pdm+cython 布局，但仓库里已带
+     **预生成的 `bycython.cpp`**，直接自写 `setup.py`：
+     `Extension("editdistance.bycython", sources=["bycython.cpp","_editdistance.cpp"], include_dirs=["src/editdistance"], language="c++")`；
+     `python setup.py build_ext --inplace` 后把 `src/editdistance` 拷进 site-packages。
+     ⚠️ 预生成的 `__init__.py` 会 `import eval_criterion`，而 cpp 里没有该符号 →
+     把 `__init__.py` 手工改写为 `from .bycython import eval`。funasr 只用 `eval`。
+  4. **torchaudio 版本对齐靠 `--no-deps`**：PyPI 上 `torchaudio` 最高只到 2.11.0，
+     而 venv 里是 `torch 2.12.1`。直接 `pip install --no-deps torchaudio==2.11.0`
+     实测**可正常 import 且 `torchaudio.compliance.kaldi` 可用**，不需要降级 torch。
+  5. **必须在沙箱外执行**：沙箱内 `import funasr`（会拉起 torch）被 `SIGKILL(137)`；
+     沙箱外正常。转录任务统一用沙箱外执行，不要把它当环境损坏。
+- **自检项**：转录前先跑
+  `python -c "import funasr, torchaudio, torchaudio.compliance.kaldi, omegaconf, jieba, editdistance"`；
+  全绿再启动，避免白等一次下载+切片。报 `EEXIST ... pip-install-*` 时**不要重试 pip**，
+  直接走上面的手工落地流程。
+- **同步更新**：本文件；`podcast-audio.md` 依赖清单。
 
 #### L040: Substack「Read more」推荐卡与站点栏目串漏过滤（2026-08-28，a16z.news 自检发现）
 - **问题**：抓取 `www.a16z.news`（Substack 自定义域）后，`source.md` 混入三类平台噪音：①文末两条推荐卡（"Faking a brand is easy…"、"Cursor + SpaceXAI…" + `Read full story`）；②正文首段的站点栏目串 `America | Tech | Opinion | Culture | Charts`；③两条 `substackcdn` 远程分割线图（2920x10，渲染后 5px）。`verification.platform_noise_hits` 却为空——因为既有噪音词表不含这些标记。
@@ -595,6 +675,22 @@
 - **问题**：API 文档说 `after=""` 会排到最前面，实际是排到最后面
 - **修复**：必须用 `before=<第一个条目ID>` 来置顶。**2026-09-02 补充**：该参数只对 MCP `entry_move_entry` 有效；OpenAPI 创建 folder 时带 `?before=` 不会改顺序，见 L043。
 
+#### L048: MCP `entry_create_entry` 建目录同样不置顶；与目标 space 同 company 时可直接用 MCP 建日期目录（2026-09-15，实战验证）
+- **背景**：微信文章转存时新建当天 `2026-09-15` 日期目录。`lexiang-upload.md` 旧表述要求 folder 创建"必须走 OpenAPI"，理由是 MCP 跨 company 会 403。
+- **实测**：本次 `mcp__lexiang__whoami` 返回 `company.code = e6c565d6d16811efac17768586f8a025`，与
+  `config.json` 的 `target_space.company_from` **完全一致**——MCP 与上传器同 company，不存在跨域问题。
+  - 直接用 MCP `entry_create_entry`（`entry_type=folder`、`parent_entry_id=<space root>`、**不传 `after`**）
+    建目录成功；但返回条目的 `sort_id`（4503628618399743）是父目录**最大**值，即落在**末位**，
+    与 OpenAPI 创建结果一致，**不会自动置顶**。
+  - 随后 `pin_lexiang_entry.py` 置顶成功，返回 `order = ["2026-09-15","2026-09-14","2026-09-12"]`。
+- **正确做法**：
+  1. 先 `whoami` 比对 MCP company 与 `config.json.target_space.company_from`；**相等时** folder
+     创建/查询可直接走 MCP，无需依赖 OpenAPI 凭证。
+  2. 无论走哪条路，**创建后必须调 `pin_lexiang_entry.py` 置顶**（创建参数不改排序），
+     再列父目录确认首项就是当天 folder。
+  3. 仅当两者 company 不同（如目标为 csig 个人知识库）时才必须绕开 MCP、改走 OpenAPI。
+- **自检项**：同 L043/L005；额外要求创建后立即打印父目录前三项名称作为证据。
+
 #### L006: block_create_block_descendant 的 index 参数必须是字符串
 - **问题**：传整数 `index: 81` 会参数校验失败
 - **修复**：传字符串 `index: "81"`
@@ -665,6 +761,8 @@
 | 2026-09-02 | 用户指出新建日期目录未出现在目录树顶部 | OpenAPI 创建不改序；创建后必须 MCP `entry_move_entry before=首位兄弟` 并核对第一项 | pin_lexiang_entry.py, SKILL.md 4.6.4, lexiang-upload.md, lessons-learned.md |
 | 2026-09-02 | latent.space 未识别为 Substack，最长容器混入头像远程 URL | 自定义域白名单 + 页面级 `.available-content`/substackcdn 检测；跳过未下载小头像 | fetch_article.py, SKILL.md 4.6.5, lessons-learned.md |
 | 2026-09-08 | arXiv 论文 Table 8 共 13 列，乐享拒绝 column_size>10 | 宽表按语义拆成多张 ≤10 列表；失败页复用 entry_id 覆盖（L045） | lessons-learned.md |
+| 2026-09-12 | 播客转录 import funasr 即崩：依赖不全 + 本机 pip 无法解包 sdist | 补齐 funasr 全量运行时依赖；sdist 包手工下载解包落地 + 补 dist-info；editdistance 用预生成 cpp 手工编译；torchaudio 用 --no-deps 对齐；转录须沙箱外执行（L046） | lessons-learned.md, podcast-audio.md |
+| 2026-09-12 | 厚雪长波 2h12m 播客角色标签 9/14 切片反转（L027→L029 后同类第三次复发） | 开场白文本锚点优先于 45 秒时长锚点；「累计字数主导者=嘉宾（比值≥1.3）」取代口吻打分为主判据；碎片跟随前段；交付前核对 guest/host 平均段长；已跑完 ASR 时用 segments.json 重算不重跑（L047） | podcast_to_lexiang.py, podcast-audio.md, lessons-learned.md |
 
 ---
 

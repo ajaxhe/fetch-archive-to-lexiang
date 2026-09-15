@@ -19,6 +19,24 @@ python3 scripts/podcast_to_lexiang.py "<播客链接>" \
 
 脚本不再接受 `--space-id`、`--parent-entry-id` 或 `--no-upload`。
 
+## 依赖（转录前必须先自检，见 L046）
+
+FunASR 链路比脚本顶部注释列出的要多，缺一个就会在 import 阶段崩。启动转录前先跑：
+
+```bash
+python -c "import funasr, torchaudio, torchaudio.compliance.kaldi, omegaconf, jieba, editdistance, kaldiio, oss2, scipy, librosa"
+```
+
+全绿再启动，否则会白等一次 183MB 下载 + 14 片切分。两个已知坑：
+
+- `torchaudio` 是 cam++ 说话人分离的硬依赖（`torchaudio.compliance.kaldi`），不能省。
+  PyPI 上 torchaudio 版本低于 torch 时，用 `pip install --no-deps torchaudio==2.11.0`
+  即可，无需降级 torch。
+- 本机 pip 解包 sdist 会报 `EEXIST ... pip-install-*`，**不要反复重试 pip**；
+  jieba / oss2 / antlr4-python3-runtime / editdistance 需手工下载解包落地（详见 L046）。
+
+转录会拉起 torch，**必须在沙箱外执行**；沙箱内会被 SIGKILL(137)。
+
 ## Show Notes
 
 Show Notes 必须在逐字稿之前：
@@ -48,8 +66,16 @@ Show Notes 必须在逐字稿之前：
   合并为较大的自然段。开场白按最多 1200 字或 180 秒分成少数大段；对话段按最多
   1500 字或 360 秒控制，角色切换时立即断段。
 - 合并同时要求 `spk` 相同；多位嘉宾不能因为都映射为 `guest` 而合并成同一段。
-- 开场前 45 秒按累计发言时长识别主要主持人，不再把前两分钟所有声音强制标为主持人；
-  后续切片结合问句、发言长度和第一人称公司语料映射主持人/嘉宾角色。
+- **角色判定优先级（L047，2026-09-12 起）**：
+  1. **开场白文本锚点**——首切片中含 `欢迎收听` / `我是主持人` / `今天的主播` 的句子，
+     其说话人即主播（冷开场时嘉宾先说话，45 秒时长锚点会判反，故文本锚点优先）；
+  2. **累计字数主导者 = 嘉宾**——仅当主导者字数 ≥ 次席 1.3 倍时采纳；
+  3. 前两条都不成立时才退回口吻打分（`_host_score` / `_guest_score`）。
+  − 少于 2 句的孤立 spk 不参与判定，跟随前一段落角色。
+- 交付前必检：`guest` 平均段长应显著大于 `host`（参考量级 2–3 倍）；若接近或倒挂即为判定失败。
+- **ASR 已跑完但角色判错时不要重跑转录**：`segments.json` 保留 `spk`，
+  直接调用 `remap_speaker_roles` → `merge_by_speaker` → `generate_markdown` 重新生成 `source.md`；
+  记得补 `meta["url"] = meta["source_url"]`，否则「原始链接」行会丢。
 - `metadata.json` 提供 `host` / `guest` 时写入姓名；缺少姓名时也必须显示
   “主持人”/“嘉宾”角色标签。可用 `--no-speakers` 关闭。
 

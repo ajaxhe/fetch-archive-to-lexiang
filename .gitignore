@@ -18,5 +18,12 @@ token_cache.json
 # 运行时输出（抓取的文章等）
 output/
 
+# 抓取的播客/音频等大二进制文件（GitHub 单文件硬上限 100MB，且属派生产物，
+# 不进版本库；文本/markdown/json 等正文照常入库）
+articles/**/*.wav
+articles/**/*.m4a
+articles/**/*.mp3
+articles/**/*.mp4
+
 # 自动化任务运行记忆（本机运行态，不属于 skill 内容）
 .workbuddy/

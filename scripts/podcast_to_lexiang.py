@@ -292,11 +292,57 @@ def _guest_score(text: str) -> float:
     return score
 
 
+def _chunk_chars(chunk: list[dict], sid: int) -> int:
+    return sum(len(x.get("text") or "") for x in chunk if int(x.get("spk", 0)) == sid)
+
+
+def _detect_intro_host_sid(chunk: list[dict], intro_end: float,
+                           fallback_sid: int) -> int | None:
+    """找出念节目开场的说话人：这是最可靠的主播锚点。
+
+    L047：冷开场（嘉宾先说话）会让「前 45 秒累计时长」锚点选中嘉宾，
+    因此必须先按开场白文本定位，只有找不到时才回退时长统计。
+    """
+    for s in chunk:
+        t = s.get("text") or ""
+        if "欢迎收听" in t or "我是主持人" in t or "今天的主播" in t:
+            return int(s.get("spk", 0))
+    if fallback_sid is not None:
+        return int(fallback_sid)
+    return None
+
+
+def _dominant_guest_sid(chunk: list[dict], min_segments: int = 2,
+                        min_ratio: float = 1.3) -> int | None:
+    """访谈播客里嘉宾累计发言量显著高于主持人。
+
+    L047：按口吻打分逐 chunk 判定会整体或局部反转（本集 14 个切片里 9 个反向），
+    而「累计字数主导者 = 嘉宾」在本集 14/14 全对，故作为主判据；
+    比值不够悬殊（<1.3）时返回 None，交回口吻打分。
+    """
+    stats: dict[int, list[int]] = {}
+    for s in chunk:
+        sid = int(s.get("spk", 0))
+        rec = stats.setdefault(sid, [0, 0])
+        rec[0] += 1
+        rec[1] += len(s.get("text") or "")
+    main = {sid: rec[1] for sid, rec in stats.items() if rec[0] >= min_segments}
+    if len(main) < 2:
+        return None
+    ranked = sorted(main.items(), key=lambda kv: kv[1], reverse=True)
+    if ranked[1][1] <= 0 or ranked[0][1] / ranked[1][1] < min_ratio:
+        return None
+    return ranked[0][0]
+
+
 def remap_speaker_roles(sentences: list[dict], chunk_seconds: int = 600,
                         intro_end: float | None = None) -> list[dict]:
     """将 cam++ 本地 spk id 映射为 host/guest。
 
-    访谈播客跨 chunk 时 spk 编号会重置，需按口吻打分；开场白强制为主播。
+    访谈播客跨 chunk 时 spk 编号会重置。判据优先级（L047）：
+    1. 开场白锚点（「欢迎收听」/「我是主持人」所在说话人）＝ 主播；
+    2. 累计字数主导者 ＝ 嘉宾（比值 ≥1.3 才采纳）；
+    3. 两者都不成立时回退口吻打分。
     """
     if not sentences:
         return sentences
@@ -341,30 +387,60 @@ def remap_speaker_roles(sentences: list[dict], chunk_seconds: int = 600,
             for s in chunk:
                 s["role"] = role
             continue
-        scores = {}
-        for sid in spk_ids:
-            segs = [x for x in chunk if int(x.get("spk", 0)) == sid]
-            hs = sum(_host_score(x["text"]) for x in segs)
-            gs = sum(_guest_score(x["text"]) for x in segs)
-            q_short = sum(
-                1 for x in segs
-                if ("？" in x["text"] or "?" in x["text"])
-                and "对吧" not in x["text"]
-                and len(x["text"]) < 40
-            )
-            scores[sid] = hs - gs + q_short * 1.5
-        if ci == first_chunk_index:
-            scores[intro_host_sid] += 100.0
-        ranked = sorted(spk_ids, key=lambda sid: scores[sid], reverse=True)
-        host_sid = ranked[0]
-        host_spks = {host_sid}
-        if ci == first_chunk_index:
-            if len(ranked) > 1 and scores[ranked[1]] > scores[ranked[0]] * 0.5:
+        # 1) 开场白锚点（仅首个切片）
+        anchored_host = (
+            _detect_intro_host_sid(chunk, intro_end, intro_host_sid)
+            if ci == first_chunk_index
+            else None
+        )
+        # 2) 话量主导者 = 嘉宾
+        dominant = _dominant_guest_sid(chunk)
+
+        host_spks: set[int] = set()
+        guest_spks: set[int] = set()
+        if dominant is not None:
+            guest_spks.add(dominant)
+            if anchored_host is not None and anchored_host != dominant:
+                host_spks.add(anchored_host)
+            else:
+                rest = [sid for sid in spk_ids if sid != dominant]
+                if rest:
+                    host_spks.add(max(rest, key=lambda sid: _chunk_chars(chunk, sid)))
+        else:
+            scores = {}
+            for sid in spk_ids:
+                segs = [x for x in chunk if int(x.get("spk", 0)) == sid]
+                hs = sum(_host_score(x["text"]) for x in segs)
+                gs = sum(_guest_score(x["text"]) for x in segs)
+                q_short = sum(
+                    1 for x in segs
+                    if ("？" in x["text"] or "?" in x["text"])
+                    and "对吧" not in x["text"]
+                    and len(x["text"]) < 40
+                )
+                scores[sid] = hs - gs + q_short * 1.5
+            if ci == first_chunk_index and anchored_host is not None:
+                scores[int(anchored_host)] += 100.0
+            ranked = sorted(spk_ids, key=lambda sid: scores[sid], reverse=True)
+            host_spks.add(ranked[0])
+            if ci == first_chunk_index and len(ranked) > 1 and scores[ranked[1]] > scores[ranked[0]] * 0.5:
                 t1 = "".join(x["text"] for x in chunk if int(x.get("spk", 0)) == ranked[1])
                 if _host_score(t1) > _guest_score(t1):
                     host_spks.add(ranked[1])
+            guest_spks = set(spk_ids) - host_spks
+
+        prev_role = None
         for s in chunk:
-            s["role"] = "host" if int(s.get("spk", 0)) in host_spks else "guest"
+            sid = int(s.get("spk", 0))
+            if sid in host_spks:
+                role = "host"
+            elif sid in guest_spks:
+                role = "guest"
+            else:
+                # 极短碎片（错切出来的零散 spk）：跟随前一段落
+                role = prev_role or "guest"
+            s["role"] = role
+            prev_role = role
 
     # 把 intro_end 挂到首段，供合并时强制断段
     if sentences:
