@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.6.5"
+version: "4.6.6"
 author: ajaxhe
 license: MIT
 category: research
@@ -94,6 +94,18 @@ requires:
    并在其中新开任务标签页；端口未启动时主动启动 CDP Chrome。CDP 连接失败
    必须退出，禁止静默回退到无登录态的 Testing Chrome。只有用户明确要求隔离浏览器时
    才使用 `--no-cdp`。
+   本机实战补充（L051，修正 L050）：真 Chrome **可以**提供 CDP 端口，此前失败的真因是嵌套沙箱下 GPU
+   进程起不来导致 Chrome 自杀（日志 `GPU process isn't usable. Goodbye.`）。需要登录态的付费来源
+   （如 Lenny's 付费长文）必须走真 Chrome，做法是：①把日常 Chrome 的 `Local State` +
+   `Default/{Cookies,Preferences,Login Data,Web Data,Secure Preferences,Local Storage,Session Storage,IndexedDB}`
+   复制到独立目录当 profile，以继承登录态；②启动参数必须含 `--no-sandbox --in-process-gpu --disable-extensions`
+   （配 `--headless=new --disable-gpu`）；③跑 `fetch_article.py` 必须关闭沙箱（默认沙箱下 Python 连不上
+   127.0.0.1:9222，会误报「端口未就绪」，且 `mkdir(exist_ok=True)` 对已存在目录会抛 EEXIST，重跑前先清 work-dir）；
+   ④收尾清理该临时 profile（约 700MB）。
+   L050 的 Chrome for Testing 兜底**仅保留给无需登录态的来源**，且必须在交付说明里标注该偏差。
+   中国网络环境下抓取需前置本地代理（实测可用 `http://127.0.0.1:1087`），
+   并设 `NO_PROXY=127.0.0.1,localhost` 避免 CDP 探测被代理。
+   启动 CDP 与执行抓取要写成同一条命令，跨 Bash 调用后台进程会被回收。
 6. 非微信来源确定新的独立工作目录，避免覆盖已有 `source.md`。
 
 平台细节见 `references/platform-specific.md`。
@@ -229,7 +241,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ 富元素由 uploader 直接渲染，无常规 MCP 二次渲染
 □ 文档目录、去重结果和 VOD 媒体目录正确
 □ 人工增量修复已同步本地最终 Markdown
-□ 浏览器抓取复用了 CDP 上下文；未启动 Google Chrome for Testing
+□ 浏览器抓取复用了 CDP 上下文；未启动 Google Chrome for Testing（仅当来源无需登录态、且真 Chrome 的 CDP 端口在本机无法拉起时才可兜底，且必须在交付说明中标注该偏差，见 L050）
 □ 播客：同说话人连续发言与短暂停顿已合并为大段；开场白只有少数大段
 □ 播客：每段明确标注“主持人/嘉宾”（有姓名则用姓名）；开场白未与第一问粘连
 □ 访谈视频：CAM++ 说话人区间已映射到 Whisper 文本；连续同一 spk 已合并
@@ -241,7 +253,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ 微信公众号：返回 entry.id；可见字段允许时 entry_type=flink、extension=wechat
 □ 微信公众号：当天目录内来源 URL 唯一；失败时已停止且未回退抓取
 □ Substack：正文提取、图片枚举和 Markdown 转换都锁定 `.available-content`，未因 `article`/`main` 更长而混入评论、Recent Episodes 或页脚
-□ Substack：标题优先取带 `datePublished` 的 JSON-LD `headline`，未把嘉宾名或正文小标题误作文章标题
+□ Substack：标题取 `window._preloads.post.title` 为首选（作者设置 SEO title 时会同时污染 `<title>`、`og:title` 和 JSON-LD `headline`，旧的 JSON-LD headline 优先方案已废弃，见 L049），未把嘉宾名或正文小标题误作文章标题
 □ 页面展示名不超过乐享 150 字符限制；超长双语标题只缩短展示名，`meta.title`、`source_title` 和最终 Markdown 文件名仍保留完整原题
 □ Every.to：最终 Markdown 去掉 `[(N)](#marginalia-cite-N)` 哈希链接，只留 `[(N)]`，否则 uploader 长段落锚点会对不上
 □ 含裸 URL 的行 plain 长度 <80 字符或 URL 在行尾；≥80 字符锚点禁止跨越 URL 结尾边界（乐享 clean 会把 URL 双写成 [url](url)，见 L039）

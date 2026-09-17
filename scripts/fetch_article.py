@@ -1116,7 +1116,27 @@ async def _extract_and_save(
                 if (Array.isArray(value)) return value.flatMap(visit);
                 return [value, ...Object.values(value).flatMap(visit)];
             };
+            // Substack exposes the real post title in window._preloads.post.title.
+            // <title> and the NewsArticle JSON-LD headline may both be rewritten
+            // with the author's "SEO title" (see lessons L049).
+            let preloadTitle = '';
+            try {
+                const preloads = window._preloads || (typeof _preloads !== 'undefined' ? _preloads : null);
+                if (preloads && preloads.post && typeof preloads.post.title === 'string') {
+                    preloadTitle = preloads.post.title.trim();
+                }
+            } catch (_) {}
+            if (preloadTitle) title = preloadTitle;
+            if (!title) {
+                const postH1 = document.querySelector('h1.post-title, h1[class*="post-title"]');
+                if (postH1) title = postH1.innerText.trim();
+            }
+            if (!title) {
+                const ogEl = document.querySelector('meta[property="og:title"]');
+                if (ogEl) title = (ogEl.getAttribute('content') || '').trim();
+            }
             for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+                if (title) break;
                 try {
                     const item = visit(JSON.parse(script.textContent || '{}')).find(
                         candidate => candidate && candidate.headline && candidate.datePublished

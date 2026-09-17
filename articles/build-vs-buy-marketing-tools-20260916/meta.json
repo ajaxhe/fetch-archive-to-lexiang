@@ -1,0 +1,27 @@
+{
+  "title": "Build vs. buy: Marketing tools in the vibe code era",
+  "display_title": "Build vs. buy: Marketing tools in the vibe code era / 自建还是购买：vibe coding 时代的营销工具",
+  "source_url": "https://hendersonmatthew.substack.com/p/build-vs-buy-marketing-tools",
+  "source_title": "Build vs. buy: Marketing tools in the vibe code era",
+  "source_type": "article",
+  "language": "en",
+  "parent_id": "a2e87106a1be4ae5881a3afc9bd0c164",
+  "subtitle": "Matt (Sentry) and Sarah (Railway) share their takes on when to build something yourself, when to reach for engineering, and when to buy software in the age where anyone can cook",
+  "author": "Matt Henderson",
+  "date": "2026-09-02T23:55:50+08:00",
+  "content_length": 9330,
+  "image_count": 2,
+  "images": [
+    "images/img_01_4db2fb65.png",
+    "images/img_02_7f69cf94.png"
+  ],
+  "fetched_at": "2026-09-16T12:20:14.381277",
+  "verification": {
+    "ok": true,
+    "source_sha256": "b116b250abfa4d99dce1c3a223294db81546811da6305cebec5016e445929295",
+    "markdown_image_references": 2,
+    "unique_local_images": 2,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}
