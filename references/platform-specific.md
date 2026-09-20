@@ -245,15 +245,64 @@ python scripts/fetch_article.py login   # 首次在 CDP Chrome 登录，后续�
 
 **付费墙检测信号**：DOM `[data-testid="paywall"]`/`.paywall`；文本 `This post is for paid subscribers`/`Subscribe to read`/`Upgrade to paid`。不同站点结构不同，抓取不全时检查实际付费墙标识并更新检测逻辑。
 
-### X.com / Twitter 帖子（必须 CDP）
+### X.com / Twitter 帖子
 
-X.com 是登录墙典型，`web_fetch` 与普通 Cookie 注入都不行，**必须 CDP**：
+分两种形态，**先判形态再选工具**：
+
+**A. 普通推文 / 图文帖** —— 用通用抓取器 + CDP：
 
 ```bash
 python scripts/fetch_article.py fetch "https://x.com/<user>/status/<id>" --output-dir <目录> --cdp
 ```
 
-CDP 通过 Chrome DevTools Protocol(9222) 复用真实 Chrome 已登录会话，绕过 X 对自动化浏览器的检测。帖子转 Markdown、媒体下载到 `images/`、链接转 md 链接、转赞数等元信息保留。
+**B. 长文（Article / Long-form post）** —— 必须用专用抓取器：
+
+```bash
+python scripts/x_article_fetch.py "https://x.com/<user>/status/<id>" --output-dir <目录> --cdp-port <端口>
+```
+
+判断信号：页面存在 `[data-testid="twitter-article-title"]` 或 `[data-testid="longformRichTextComponent"]`。
+`fetch_article.py` 对长文无效——它取到的 innerText 会把 85 个 Draft.js 块压成一行、标题退化成
+`Conversation`、并混入 `Want to publish your own Article?` / `Upgrade to Premium` /
+`Post your reply` 等按钮文案（详见 lessons-learned L052）。
+
+`x_article_fetch.py` 直接解析 Draft.js 结构：
+
+| DOM | 含义 |
+|---|---|
+| `[data-testid="twitter-article-title"]` | 文章标题 |
+| `[data-testid="longformRichTextComponent"]` | 正文容器 |
+| `div[data-block="true"].longform-unstyled` | 段落（整段加粗且 ≤80 字符 ⇒ `##` 小标题） |
+| `…longform-unordered-list-item` | 无序列表项 |
+| `[data-testid="twitterArticleReadView"] img[src*=pbs.twimg.com/media]` | 封面图（长文无正文插图） |
+
+两种形态的共同前提：**CDP Chrome 必须带 X 登录态**（`auth_token` cookie）。X 对匿名/无登录
+上下文会返回 `net::ERR_HTTP_RESPONSE_CODE_FAILURE`；脚本检测不到 `auth_token` 直接失败退出，
+**禁止**改用匿名兜底或 WebFetch 取正文。
+
+启动带登录态的 CDP Chrome（沿用 L051 做法，勿用 `~/.fetch_article/chrome_cdp_profile`，它没有登录态）：
+
+```bash
+SRC="$HOME/Library/Application Support/Google/Chrome"; DST="/tmp/cdp_profile_x"
+rm -rf "$DST"; mkdir -p "$DST/Default"
+cp "$SRC/Local State" "$DST/Local State"
+for f in Cookies Cookies-journal Preferences "Login Data" "Web Data" "Secure Preferences"; do
+  cp "$SRC/Default/$f" "$DST/Default/$f"; done
+for d in "Local Storage" "Session Storage"; do cp -R "$SRC/Default/$d" "$DST/Default/$d"; done
+nohup "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9233 --user-data-dir="$DST" --no-first-run --no-default-browser-check \
+  --headless=new --disable-gpu --disable-extensions --no-sandbox --disable-dev-shm-usage \
+  --disable-software-rasterizer --in-process-gpu >/tmp/chrome_cdp_x.log 2>&1 & disown
+# 轮询 http://127.0.0.1:9233/json/version 就绪后再抓取，两者必须在同一次命令里
+```
+
+抓取后清理 `pkill -f "user-data-dir=/tmp/cdp_profile_x"` + `rm -rf /tmp/cdp_profile_x`（约 57MB）。
+
+X 长文只有 1 张封面图：正文里 `Caption: “…”` 这类图注可能指向 X 未渲染的插图，
+抓不到就是抓不到，**不要**用封面图冒充插图或伪造图片。
+
+X 的 `[[` 内联图片、转赞数等元信息由脚本写入 `meta.json`（`author` / `author_handle` /
+`date` / `views`）。
 
 ### 微博帖子（必须 CDP）
 

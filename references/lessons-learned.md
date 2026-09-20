@@ -232,6 +232,76 @@
   退回核对第 1、2 条，不要直接归档。
 - **同步更新**：本文件；`SKILL.md` Step 0 第 5 条的 CDP 说明（L050 的 Testing Chrome 兜底仅保留给无登录态来源）。
 
+#### L052: X.com 长文（Article）用通用抓取器会「全文压成一行 + 标题变 Conversation + 混入按钮文案」（2026-09-20，实战踩坑）
+
+- **问题**：转存 `https://x.com/joshelman/status/2099498819914551344`（Josh Elman《Product Management
+  is still about telling stories》长文）时，走默认 CDP 路径跑 `fetch_article.py`，虽然拿到了 19202 字符，
+  但 `source.md` 只有 30 行：**85 个段落被压成一整段**（小标题与正文粘连成
+  `…telling you one.The interview question I’ll never forgetI started my career…`），
+  `meta.title` 退化成 `Conversation`，正文尾部还混进
+  `[Josh Elman](/joshelman)[@joshelman](/joshelman)`、`Want to publish your own Article?`
+  `[Upgrade to Premium]`、`[611.4K Views]`、`[View quotes]`、`Post your reply`
+  等页面按钮文案；`verification.ok` 仍为 `true`（噪音词表不含这些标记）。
+- **根因**：
+  1. X 长文正文是 **Draft.js 结构**（`[data-testid="longformRichTextComponent"]` 下的
+     `div[data-block="true"]`），段落/列表/小标题都是块级信息，通用提取器只取
+     `innerText`，把块边界信息丢掉了。
+  2. X 长文的文章标题在 `[data-testid="twitter-article-title"]`，**不在** `<h1>`/`og:title`；
+     通用标题逻辑只能回退到 `document.title` = `Conversation`。
+  3. 通用正文容器选到了整条 tweet cell（含 analytics/quote/reply 等按钮文本）。
+- **正确做法（已固化为 `scripts/x_article_fetch.py`）**：
+  1. 按 `[data-testid="twitterArticleRichTextView"] / longformRichTextComponent` 解析 Draft.js：
+     `longform-unstyled` ⇒ 段落；`longform-unordered-list-item` ⇒ 列表项；
+     **整段加粗且 ≤80 字符的段落 ⇒ `##` 小标题**（X 长文的小标题就是这种加粗段落，源文里没有 `<h1>`/`<h2>`）。
+  2. 行内样式还原成 Markdown：`font-weight:bold` ⇒ `**`、`font-style:italic` ⇒ `*`、`<a>` ⇒ `[text](abs_url)`。
+     ⚠️ **标记符号不能 trim 掉边界空格**，否则会产出 `*I*think`、`*judgment*hasn't` 这类粘连
+     （首版即踩到，必须把前后空白挪到标记之外）。
+  3. 标题取 `twitter-article-title`；作者/日期/浏览量取 `[data-testid="User-Name"]`、
+     `time[datetime]`、`a[href*="/analytics"]`，写入 `meta.json`。
+  4. 长文**只有 1 张封面图**（在 ReadView 层，不在正文组件内）。正文里
+     `Caption: “we eventually got to number one.”` 这类图注可能指向 X 未渲染的插图——
+     抓不到就如实交付，禁止用封面图冒充。
+  5. 硬校验：标题非空、块数 ≥5、正文 ≥500 字符、噪音词表（`want to publish your own article` /
+     `upgrade to premium` / `post your reply` / `view quotes`）归零，否则非零退出。
+- **前置条件（与 L023/L051 一致）**：X 是登录墙，CDP Chrome 必须带 `auth_token`。
+  本次 9223 端口的既有 CDP Chrome 只有 guest cookie，抓取报
+  `net::ERR_HTTP_RESPONSE_CODE_FAILURE`；改用「复制日常 Chrome profile + `--no-sandbox
+  --in-process-gpu` 起独立 CDP 端口」后正常。脚本检测不到 `auth_token` 应直接失败退出。
+- **自检项**：X 长文工作包 `meta.title` 是文章标题（不是 `Conversation`）；`source.md` 行数
+  与块数同量级（不是几行）；无 `Upgrade to Premium` / `View quotes` / `Post your reply`；
+  小标题行以 `## ` 开头且数量与源文小标题数一致。
+- **同步更新**：`scripts/x_article_fetch.py`（新增）；`SKILL.md` Step 1 表格 + 脚本边界表；
+  `references/platform-specific.md` 的 X.com 章节（拆成普通推文 / 长文两条路径）；本文件。
+
+#### L053: a16z.news 二次抓取——Substack 装饰分隔线触发「远程图片 URL」硬校验；同尺寸横幅未必是正文图（2026-09-20，实战踩坑 + 人工读图核实）
+- **问题**：抓 `www.a16z.news/p/product-management-is-still-all-about`（Substack 自定义域，免费、可直连、无需代理）
+  首次运行在 `📝 正在转换为 Markdown...` 之后抛
+  `RuntimeError: Markdown 仍含远程图片 URL`，命中 2 处**同一个** URL：
+  `substackcdn.com/image/fetch/$s_!SU5S!,w_1456,c_limit,…/…_2920x10.png`（正文里的装饰分割线）。
+  同一次运行图片枚举 12 张、1 张下载失败（文件名编号跳号 01/03…）。**清空 work-dir 原样复跑一次即成功**
+  （枚举 10 张、零失败、`verification.ok=true`）。
+- **已核实的结构事实（下次排障直接引用）**：
+  1. 该站分割线的 DOM 是
+     `<figure><a class="image-link image2" href="…_2920x10.png"><picture><img src="…w_1456,c_limit,…_2920x10.png" width="1456" height="5"></a></figure>`
+     ——**img 的 `naturalWidth/Height` 在懒加载/未解码时为 `0`**，此时比例守卫失效，只剩 `/_2920x10|_3098x10/` 模式守卫兜底。
+  2. 页脚还有一张 `…_3098x158.png`（渲染 728×37），**下载看过：内容就是
+     「SUBSCRIBE FOR MORE FROM A16Z EVERY WEEKDAY:」的订阅横幅**，属平台 chrome，必须剔除。
+  3. 正文真图宽高比为 1.4–2.4:1（本次 10 张全在 1456×596 ~ 1456×1056）；`.available-content`
+     末尾还跟着 `a16z.com/disclosures` 免责段与推荐卡（`Read full story`），本次均已被 DOM 层剔除。
+- **正确做法**：
+  1. 命中该硬校验时**先清 work-dir 原样复跑一次**再判断是不是脚本 bug（本次复跑即恢复，未改任何守卫）。
+  2. 该守卫现在会把完整 Markdown 落盘到 `<work-dir>/_debug_remote_image.md`，并在报错里打印每处命中前后 90 字符
+     上下文；排障时先读上下文，区分「真·正文图漏下」还是「平台装饰图漏网」，不要凭 URL 猜。
+  3. **装饰图判定必须看内容（读图）或看渲染尺寸**：文件名/尺寸相同不代表性质相同。
+- **修正 L040**：L040 写「3098x158 的文末黑底横幅即正文图，不可误删」；本次同为 3098×158 的图下载确认是
+  **a16z 的订阅横幅**。结论修正为：**不要按尺寸/文件名给「正文图白名单」，一律读图或读渲染文字判定**；
+  比例守卫（`h<100 && w/h>15`）对订阅横幅的剔除是正确行为。
+- **自检项**：a16z.news 工作包 `source.md` 全文搜 `SUBSCRIBE FOR MORE`、`disclosures`、`opted in`、
+  `unsubscribe`、`Read full story` 须归零；正文图片数 = 浏览器 `.available-content` 内「非分割线、非订阅横幅、
+  非推荐缩略图」的图数；出现编号跳号时逐张核对尺寸而不是默认合理。
+- **同步更新**：本文件；`scripts/fetch_article.py`（远程图片守卫的上下文诊断落盘；两处 `[\[\]]` 的
+  `SyntaxWarning` 转义改为 `[\\[\\]]`）。
+
 #### L050: 本机真 Chrome 不暴露 CDP 端口 + Substack 需走本地代理 1087（2026-09-16，实战踩坑）
 - **问题**：抓 `hendersonmatthew.substack.com` 时，`fetch_article.py` 默认 CDP 路径反复失败：
   `curl http://127.0.0.1:9222/json/version` 无任何响应；单独用
@@ -326,6 +396,7 @@
   1. **DOM 层先删后取**：提取正文前用前缀选择器剔除 `[class*="digestPostEmbed"]`、`[class*="readMore"]`、`[class*="read-more"]`、`[class*="recirculation"]`、`[class*="relatedPosts"]`、`[class*="related-posts"]`、`[class*="subscribeWidget"]`、`.subscription-widget-wrap`。DOM 层删除能让推荐缩略图**不进入图片枚举**（本次图片候选从 8 张降到 6 张）。
   2. **栏目串通用规则**：正文内无句末标点、由 `|` 分隔 ≥3 段、每段 ≤24 字符且无连续空格的短元素，判为导航串删除（DOM 层 + `_strip_substack_archive_noise` 开头正则双重兜底）。
   3. 噪音词表补 `read full story`，让同类漏网能被硬校验拦下。
+- **2026-09-20 复发补丁**：`a16z.news` 文内 `2920x10` 分割线仍会进入枚图；下载返回 335B 后 Markdown 写成远程 URL，被 L044 硬校验拦下。已在枚图和 `img`/`figure` 转换中跳过「高 <100px 且宽高比 >15」以及 `_2920x10`，禁止再写出远程分割线 URL。
 - **自检项**：Substack 工作包全文搜索 `Read full story`、`Discussion about`、站点栏目串须归零；正文图片数应与"浏览器 DOM 内 `.available-content` 的真实内容图数"一致，出现编号跳跃（如 01/03/04/05）时要逐张核对而非默认合理。
 - **判断噪音图的实用技巧**：无法读图时用 `sips -g pixelWidth -g pixelHeight` 看尺寸——宽高比 >15:1 且高度 <100px 的多半是装饰分割线/横幅；再用 CDP 查该 img 的**祖先链**，仍在 `.body markup`（Substack 正文容器）内且无 recommend 类，则应作为正文图保留（本次 3098x158 的文末黑底横幅即正文图，不可误删）。
 
@@ -852,6 +923,8 @@
 | 2026-09-16 | 抓 Lenny's 付费长文：真 Chrome CDP 起不来导致拿不到全文；沙箱下 Python 连不上 9222 却报「端口未就绪」误导；`mkdir(exist_ok=True)` 在沙箱抛 EEXIST | 复制日常 Chrome profile 带登录态 + `--no-sandbox --in-process-gpu --disable-extensions` 启动真 Chrome；抓取必须 `dangerouslyDisableSandbox`；重跑前先清 work-dir（L051，修正 L050 的 Testing Chrome 兜底结论） | lessons-learned.md, SKILL.md Step 0 |
 | 2026-09-16 | Substack 作者设置 SEO title 后 `<title>`/`og:title`/JSON-LD `headline` 同时失真，抓到的标题是 SEO 变体 | Substack 标题改取 `window._preloads.post.title` 为首选；废弃 2026-07-23 的「JSON-LD headline 优先」方案（L049） | fetch_article.py, SKILL.md Step 4 自检清单, lessons-learned.md |
 | 2026-09-16 | 本机真 Chrome 不暴露 CDP 端口；直连 Substack 不通；CDP 起停跨调用被回收 | 用 Playwright Chrome for Testing 兜底提供 CDP（仅限无登录态来源）；抓取前置 `HTTPS_PROXY/HTTP_PROXY=127.0.0.1:1087` + `NO_PROXY=127.0.0.1,localhost`；CDP 启动与抓取必须同一次 Bash 调用（L050） | lessons-learned.md, SKILL.md Step 0 CDP 说明 |
+| 2026-09-20 | X.com 长文用通用抓取器：85 段压成一行、标题变 `Conversation`、混入 `Upgrade to Premium`/`View quotes` 等按钮文案，而 `verification.ok` 仍为 true | 新增 `scripts/x_article_fetch.py` 解析 Draft.js 块结构（段落/加粗小标题/列表/封面图 + 作者日期浏览量 + 噪音硬校验）；强调标记不得 trim 边界空格；X 长文只有 1 张封面图（L052） | scripts/x_article_fetch.py, SKILL.md Step 1 + 脚本表, platform-specific.md, lessons-learned.md |
+| 2026-09-20 | a16z.news 二次抓取时 Substack 装饰分割线（`_2920x10`）以远程 URL 泄漏，撞上「仍含远程图片 URL」硬校验；同尺寸 3098×158 图曾被 L040 判为正文图 | 命中该守卫先清 work-dir 原样复跑（本次即恢复）；守卫新增 `_debug_remote_image.md` + 命中上下文打印；读图核实 3098×158 实为 `SUBSCRIBE FOR MORE FROM A16Z` 订阅横幅，修正 L040「按尺寸放行正文图」的表述（L053） | fetch_article.py（守卫诊断 + `[\[\]]` 转义告警）, lessons-learned.md |
 
 ---
 

@@ -1387,6 +1387,9 @@ async def _extract_and_save(
             } else {
                 // Original filter for other sites
                 if (x.width > 0 && x.width < 50 && x.height > 0 && x.height < 50) return false;
+                // L040: Substack decorative dividers like 2920x10
+                if (x.height > 0 && x.height < 100 && x.width / x.height > 15) return false;
+                if (/_\\d+x1?0\\.png/.test(x.src) && /_2920x10|_3098x10/.test(x.src)) return false;
             }
             return true;
         });
@@ -1601,7 +1604,7 @@ async def _extract_and_save(
                 case 'img': {
                     const src = node.src || node.getAttribute('data-src') || '';
                     const dataSrc = node.getAttribute('data-src') || '';
-                    const alt = (node.alt || '').replace(/[\[\]]/g, '');
+                    const alt = (node.alt || '').replace(/[\\[\\]]/g, '');
                     if (!src || src.includes('data:image/svg')) return '';
                     // Try matching imageMap with both src and data-src (WeChat uses data-src as key)
                     const localPath = imageMap[src] || imageMap[dataSrc];
@@ -1609,6 +1612,9 @@ async def _extract_and_save(
                         const w = node.naturalWidth || node.width || 0;
                         const h = node.naturalHeight || node.height || 0;
                         if ((w > 0 && w < 50 && h > 0 && h < 50) || /[,/]w_3[0-9],h_3[0-9]/.test(src)) {
+                            return '';
+                        }
+                        if ((h > 0 && h < 100 && w / h > 15) || /_2920x10|_3098x10/.test(src)) {
                             return '';
                         }
                         return '\\n![' + alt + '](' + src + ')\\n\\n';
@@ -1620,13 +1626,16 @@ async def _extract_and_save(
                     const caption = node.querySelector('figcaption');
                     if (img) {
                         const src = img.src || img.getAttribute('data-src') || '';
-                        const alt = (img.alt || (caption ? caption.innerText.trim() : '')).replace(/[\[\]]/g, '');
+                        const alt = (img.alt || (caption ? caption.innerText.trim() : '')).replace(/[\\[\\]]/g, '');
                         if (!src || src.includes('data:image/svg')) return '';
                         const localPath = imageMap[src];
                         if (!localPath) {
                             const w = img.naturalWidth || img.width || 0;
                             const h = img.naturalHeight || img.height || 0;
                             if ((w > 0 && w < 50 && h > 0 && h < 50) || /[,/]w_3[0-9],h_3[0-9]/.test(src)) {
+                                return caption ? ('*' + caption.innerText.trim() + '*\\n\\n') : '';
+                            }
+                            if ((h > 0 && h < 100 && w / h > 15) || /_2920x10|_3098x10/.test(src)) {
                                 return caption ? ('*' + caption.innerText.trim() + '*\\n\\n') : '';
                             }
                             return '\\n![' + alt + '](' + src + ')\\n\\n';
@@ -1687,7 +1696,20 @@ async def _extract_and_save(
         if re.search(r"\.(?:png|jpe?g|gif|webp)(?:\?|$)", url, re.I)
     ]
     if remote_images:
-        raise RuntimeError(f"Markdown 仍含远程图片 URL: {remote_images[:8]}")
+        # 排障用：把完整 Markdown 与每处命中的上下文落盘，避免只看到 URL 猜原因
+        debug_md = output_path / "_debug_remote_image.md"
+        debug_md.write_text(markdown or "", encoding="utf-8")
+        contexts = []
+        for url in dict.fromkeys(remote_images):
+            for m in re.finditer(re.escape(url), markdown or ""):
+                snippet = (markdown or "")[max(0, m.start() - 90):m.end() + 30]
+                contexts.append(snippet.replace("\n", "\\n"))
+                break
+        raise RuntimeError(
+            f"Markdown 仍含远程图片 URL: {list(dict.fromkeys(remote_images))[:8]}\n"
+            f"命中上下文: {contexts[:4]}\n"
+            f"完整 Markdown 已存: {debug_md}"
+        )
     referenced_image_set = set(referenced_images)
     for local_rel in set(image_map.values()) - referenced_image_set:
         (output_path / local_rel).unlink(missing_ok=True)

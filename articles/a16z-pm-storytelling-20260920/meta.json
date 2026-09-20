@@ -1,0 +1,37 @@
+{
+  "title": "Product Management is Still All About Telling Stories",
+  "source_url": "https://www.a16z.news/p/product-management-is-still-all-about",
+  "source_title": "Product Management is Still All About Telling Stories",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "What AI is changing. What it’s not.",
+  "author": "Josh Elman",
+  "date": "2026-09-14T22:02:07+08:00",
+  "content_length": 20139,
+  "image_count": 10,
+  "images": [
+    "images/img_01_80d58d51.png",
+    "images/img_02_e7ba9b6b.png",
+    "images/img_03_b76df636.png",
+    "images/img_04_c6baa9f3.png",
+    "images/img_05_48fd1fc2.png",
+    "images/img_06_262ed0a9.png",
+    "images/img_07_32fd03c4.png",
+    "images/img_08_4a7415ce.png",
+    "images/img_09_bb78681f.png",
+    "images/img_10_02dee97e.png"
+  ],
+  "fetched_at": "2026-09-20T15:28:29.501412",
+  "verification": {
+    "ok": true,
+    "source_sha256": "692fa9d2a523265502bfa516c58f1b90c26a4eab74323bee25c32cc3fc3d4976",
+    "markdown_image_references": 10,
+    "unique_local_images": 10,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  },
+  "display_title": "Product Management is Still All About Telling Stories / AI 时代的产品管理依然是讲故事",
+  "parent_id": "dbc4459d045649e39fcaeee0a64e19ec",
+  "lexiang_space_id": "cc9dc48a4a8845ff83c3d403840ae189",
+  "lexiang_profile": "csig"
+}

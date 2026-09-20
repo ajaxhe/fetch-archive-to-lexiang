@@ -116,6 +116,7 @@ requires:
 |---|---|
 | 微信公众号 (`mp.weixin.qq.com`) | 强制调用乐享 MCP `file_create_hyperlink`；不抓取、不建工作包、不上传 Markdown |
 | 免费/付费网页 | `scripts/fetch_article.py fetch "<URL>" --output-dir <DIR>`（默认 CDP） |
+| X.com 长文（Article） | `scripts/x_article_fetch.py "<URL>" --output-dir <DIR> --cdp-port <端口>`（见 `references/platform-specific.md`） |
 | YouTube | `scripts/yt_download_transcribe.py "<URL>" --output-dir <DIR>` |
 | 播客 | `scripts/podcast_to_lexiang.py "<URL>" --output-dir <DIR>` |
 | PDF / 乐享 PDF | 准备 PDF/解析原文后交给 `trans-doc-to-md` |
@@ -281,6 +282,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 | 脚本 | 职责 |
 |---|---|
 | `fetch_article.py` | 网页抓取，生成 `source.md`、`images/`、`meta.json` |
+| `x_article_fetch.py` | X.com 长文（Article）专用抓取：解析 Draft.js 块结构，还原段落/小标题/列表与封面图 |
 | `yt_download_transcribe.py` | YouTube 下载、转录、Show Notes、标准工作包 |
 | `podcast_to_lexiang.py` | 播客下载、转录、Show Notes、标准工作包 |
 | `lexiang_pdf_parse.py` | 乐享 PDF 来源解析桥接 |
