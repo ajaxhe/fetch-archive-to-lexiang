@@ -1,0 +1,35 @@
+{
+  "title": "Stealing Reasoning Traces from Proprietary LLM APIs",
+  "display_title": "Stealing Reasoning Traces from Proprietary LLM APIs / 从专有 LLM API 中窃取推理轨迹",
+  "source_url": "https://arxiv.org/html/2608.09867v1",
+  "source_title": "Stealing Reasoning Traces from Proprietary LLM APIs",
+  "source_type": "pdf",
+  "language": "en",
+  "parent_id": "34a3f7f1f2fe4e33a8e7e91c49f15476",
+  "authors": "Alexander Panfilov, David Schmotz, Ilia Shumailov, Luca Beurer-Kellner, Joachim Schaeffer, Ameya Prabhu, Jonas Geiping, Maksym Andriushchenko",
+  "author_affiliations": "MATS Research; ELLIS Institute Tübingen; Max Planck Institute for Intelligent Systems; Tübingen AI Center; AI Sequrity Company; Snyk; University of Tübingen",
+  "published": "2026-08-10",
+  "arxiv_id": "2608.09867",
+  "doi": "10.48550/arXiv.2608.09867",
+  "primary_class": "cs.CR",
+  "project_page": "https://stolen-thoughts.com/",
+  "image_count": 3,
+  "content_length": 417655,
+  "archive_scope": "正文（摘要 + 1–6 章 + 结论）中英对照；参考文献与附录 A–E 保留英文原文（用户 2026-09-20 明确指定）",
+  "source_cleanup": [
+    "删除项目符号的 LaTeX 转义残留：`- ■\\blacksquare` → `- ■`（9 处），否则会粘到上一段末尾污染段落比对",
+    "删除作者块中 HTML 抓取产生的 `Affiliation:` 前缀（18 行），保留机构名本体，信息未增减"
+  ],
+  "validation": {
+    "script": "verify.py",
+    "translated_scope": "source.md 第 1–581 行",
+    "english_only_scope": "source.md 第 582–9724 行",
+    "checks": {
+      "paragraph-preservation@full-document": "pass",
+      "translation-coverage@translated-scope": "pass",
+      "local-images-preserved@full-document": "pass",
+      "no-image-metadata-or-escaped-dollars@full-document": "pass"
+    },
+    "note": "上游 bilingual_validate.py 按「全文双语」设计覆盖率门槛，与本档案范围不匹配；verify.py 只把覆盖率检查限定在已翻译范围，段落保全仍跑全文。"
+  }
+}
