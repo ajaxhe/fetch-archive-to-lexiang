@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.6.6"
+version: "4.6.7"
 author: ajaxhe
 license: MIT
 category: research
@@ -182,6 +182,20 @@ python3 scripts/pin_lexiang_entry.py \
 ```
 
    自检：父目录子条目第一项必须是当天 folder。复用已有日期目录时不必再移。
+
+   **本机已核实的目标目录事实（2026-09-21 实测，省去重复侦察）**：
+   - 归档落在 space `b6013f6492894a29abbd89d5f2e636c6`（即 config.json 的「个人知识库」）；
+     日期目录的父节点是该知识库 root `a97cd58ddbae4013b7e1025c0be991cc`（名为 `#ROOT#`）。
+     日期目录直接挂在 root 下，中间没有 vault 层。
+   - ⚠️ MCP `whoami` 返回的 `personal_space`（`50f32b33…`「凡哥的个人知识库」）**不是**归档目标，
+     两个知识库不同；不要用 whoami 的 space 建日期目录。
+   - MCP `entry_create_entry(entry_type="folder", parent_entry_id=<root>)` **不带 `after` 并不会置顶**，
+     新 folder 的 `sort_id` 会落在末尾。必须随后补一次
+     `entry_move_entry(entry_id=<新目录>, parent_id=<root>, before=<当前首位兄弟>)`。
+     排序规则：子条目按 `sort_id` **升序**展示，置顶 = 取到比原首位更小的 `sort_id`。
+   - 本机 deferred 工具索引**不直接暴露** `entry_*` / `file_*` 等乐享业务工具，
+     需经 `mcp__lexiang__call_tool(tool_name="...", arguments={...})` 调用；
+     参数不确定时先用 `mcp__lexiang__get_tool_schema`（比 `ToolSearch` 精确查名更可靠）。
 3. 视频/播客在日期目录下查询并复用 `<原文标题>` 文件夹。
 4. 在目标目录内按规范化标题、来源 URL 和条目类型去重；确认是同一来源后才覆盖。
 5. 上传前记录目标目录子条目快照；本次任务只允许新增或更新“最终 Markdown 页面 +

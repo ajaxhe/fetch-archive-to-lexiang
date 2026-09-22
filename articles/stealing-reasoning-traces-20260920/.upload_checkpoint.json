@@ -1,1 +1,1 @@
-{"entry_id": "9ca5b3ef4b174a06a7cfa31438d32bcd", "total": 35, "cleared": true, "done": 25}
+{"entry_id": "9ca5b3ef4b174a06a7cfa31438d32bcd", "total": 35, "cleared": true, "done": 25, "delivered": true, "delivered_at": "2026-09-21T09:47+08:00", "inline_done": 25, "tail_delivery": "attachment", "tail_file_id": "a4ba6a06c92b401f93f2e09ffed9915b", "tail_segments": "26-35", "note": "第 26-35 片因 WAF 内容签名拦截改为页内附件块交付；done 保留 25 供 token 续期后内联续写"}
