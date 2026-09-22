@@ -848,6 +848,25 @@
   3. 仅当两者 company 不同（如目标为 csig 个人知识库）时才必须绕开 MCP、改走 OpenAPI。
 - **自检项**：同 L043/L005；额外要求创建后立即打印父目录前三项名称作为证据。
 
+#### L054: 上传器个人凭证 MCP allowlist 过窄时，不得卡死；同 company 的 user-lexiang 可兜底写页（2026-09-22，实战踩坑）
+- **背景**：YouTube 归档 `PVKhoFcTpsI` 时，目录与空页已用 user-lexiang MCP 建好，但
+  `lexiang_upload.py` 用 `~/.config/lexiang-upload/credentials.json` 写入失败：
+  `tool is not allowed: entry_create_entry` / `block_list_block_children`。
+  同一 token 也不能 `entry_list_children`，导致 `pin_lexiang_entry.py` 同样失败。
+- **根因**：uploader 个人凭证与 Cursor `user-lexiang` 不是同一条 MCP allowlist。
+  前者被收窄到几乎不能建页/列子节点；后者与 `config.json` 的
+  `company_from=e6c565…` 同公司，可以 `entry_create_entry`、`entry_import_content_to_entry`、
+  `entry_move_entry`、`block_fetch_page`、`block_update_page`。
+- **正确做法**：
+  1. 仍先走官方 uploader（`--entry-id` 复用已建空页，`--json`）。
+  2. 若报 `tool is not allowed`，**不要**再读 Agent MCP 配置猜 token，也**不要**用普通文件上传。
+  3. 同 company 时改用 `user-lexiang`：`entry_import_content_to_entry` 分片写入
+     （首片 `force_write=true`，其后 `false` 追加；追加段首禁止 `---`），视频仍走
+     `upload_video_via_openapi.py` 的 VOD 路径。
+  4. 置顶用 MCP `entry_move_entry before=首位兄弟`，不要依赖 uploader `--pin`。
+  5. 标题目录对账仍必须是 1 个 page + 1 个 video，无 test/v2/空页残留。
+- **自检项**：uploader 失败时交付说明必须写明兜底路径；线上 `block_fetch_page` 覆盖开场到结尾时间戳。
+
 #### L006: block_create_block_descendant 的 index 参数必须是字符串
 - **问题**：传整数 `index: 81` 会参数校验失败
 - **修复**：传字符串 `index: "81"`
