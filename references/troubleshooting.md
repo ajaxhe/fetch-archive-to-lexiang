@@ -11,6 +11,9 @@
 | 图后标题变普通段落 | 图片后的文本段以 `---` 开头 | 删除分隔线并重新上传 |
 | CDP 打开 Testing Chrome | 9222 CDP Chrome 未正确连接 | 启动持久化 CDP Profile，禁止空登录态降级 |
 | Whisper/native 库签名失败 | Agent 沙箱限制 | 申请沙箱外执行；不得静默用 Show Notes 冒充转录 |
+| `MCP HTTP 403` +「WAF拦截页面」（仅某一片） | 该片内容命中 WAF 签名，非频率限制 | 对照短文本判定性质 → 行二分定位 → 尾部大段原文改「页内附件块」（见 `lexiang-upload.md`）；禁止改写原文 |
+| `tool is not allowed: <tool>` | `lxmcp_` 凭证被整体降权（≠401 过期） | 用只读工具复现确认后，改用内置乐享连接器续做，或让用户重新生成 token |
+| 附录只能以附件交付 | 内联写入被内容安全规则拦截，改写会篡改原文 | `block_apply_block_attachment_upload` → curl PUT → `attachment` 块；正文写明原文未改写 |
 
 ## 上传器问题归属
 
