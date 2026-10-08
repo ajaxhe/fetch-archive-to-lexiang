@@ -1,0 +1,28 @@
+{
+  "title": "The Changing World Order",
+  "source_url": "https://www.linkedin.com/pulse/changing-world-order-ray-dalio-1f/",
+  "source_title": "The Changing World Order",
+  "source_type": "article",
+  "language": "en",
+  "display_title": "The Changing World Order / 变化中的世界秩序",
+  "subtitle": "Founder of Bridgewater Associates",
+  "author": "Ray Dalio",
+  "parent_id": "bfdc4af932c942a1a5b071f8509cfd81",
+  "entry_id": "d6267a36e8e6401f92d789ca58a020d0",
+  "date": "March 26, 2020",
+  "content_length": 38261,
+  "image_count": 2,
+  "images": [
+    "images/img_01_1363559c.png",
+    "images/img_02_eb05b28b.png"
+  ],
+  "fetched_at": "2026-10-08T14:27:20.081017",
+  "verification": {
+    "ok": true,
+    "source_sha256": "0f6845adf33787017c71d5d5f8893be648c50b548386122d835f66a3d9c0b27c",
+    "markdown_image_references": 2,
+    "unique_local_images": 2,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}
