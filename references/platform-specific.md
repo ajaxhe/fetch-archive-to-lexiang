@@ -58,7 +58,7 @@ file_create_hyperlink(
 **技术原因**：
 1. **SPA 架构**：得到网页版是 React SPA，文章正文通过 JS 异步渲染，`web_fetch` 只能拿到空白壳页面
 2. **付费墙**：文章属于付费专栏内容，必须有已登录且已订阅的账号才能查看全文
-3. **DOM 结构特殊**：正文容器使用 `.iget-articles` 类名，不在 `fetch_article.py` 的默认选择器列表（`article`、`.post-content` 等）中。通用 `article` 选择器只匹配到极少内容（~167 字符），而真正的正文在 `.iget-articles` 中有 6000+ 字符
+3. **DOM 结构特殊**：课程页正文容器可能是 `.iget-articles`；分享包页（`/share/packet`）登录后的正文容器是 `.article-body`，外层 `.article` / `.main-content` 会混入标题栏和评论。`fetch_article.py` 对得到来源优先锁 `.article-body`，再回退 `.iget-articles`。标题、作者、发布日期取 `window.__INITIAL_STATE__.packetInfo` / `articleInfo.article.PublishTime`，不要用文内第一个 h1（那是小节标题）。未登录时 `packetInfo.has_authority=false`，正文只有约 20%，必须停下来等登录，不能把预览当全文。
 4. **内容区混杂**：正文容器中混入了标题重复、音频时长、"划重点"、用户评论等非正文内容，需要清理
 
 **抓取方案**：使用 **CDP 模式**连接 CDP Chrome（9222 端口）：
@@ -70,19 +70,14 @@ curl -s http://127.0.0.1:9222/json/version   # 预检
 python scripts/fetch_article.py fetch "https://www.dedao.cn/course/article?id=<ID>" --output-dir <目录> --cdp
 ```
 
+**付费墙时的做法**（与 SKILL「付费墙：停等登录」一致）：
+
+页面出现「剩余 N%，继续学习」，或 `packetInfo.has_authority === false`，就停。登录框留在当前 CDP Chrome。等用户说登录完成，再对**原来的 URL** 抓一次。`fetch_article.py` 在墙还在时会以 `PAYWALL_LOGIN_REQUIRED` 退出，并且不写 `source.md`。
+
 **已知限制**：
-- `fetch_article.py` 的通用内容提取逻辑对得到 DOM 结构匹配不佳，**抓取结果可能不完整**
 - **CDP 零标签页陷阱**（2026-07-07 修复）：CDP Chrome 所有 tab 关闭时 `connect_over_cdp` 失败；v2.8.3 起自动创建种子 tab。旧版会静默回退到 `Google Chrome for Testing`（无登录态）
 - **CDP 连接失败**：`--cdp` 模式下 v2.8.3 起禁止回退到 Testing Chrome，应修复 CDP 环境（见 SKILL.md Step 0d）后重试
-- **WebFetch 降级方案**：当 CDP 完全不可用时，可用 `WebFetch` 侦察，但若无法证明是完整原文则不得归档；手工补全时也必须生成标准 `source.md`、`images/`、`meta.json`
-- 正确做法是通过 Playwright CDP 连接后，**手动指定 `.iget-articles` 选择器**提取正文：
-
-```python
-# 通过 CDP 连接后，用专用选择器提取得到文章正文
-content_el = await page.query_selector('.iget-articles')
-if content_el:
-    text = await content_el.inner_text()  # 完整正文
-```
+- 正文容器优先 `.article-body`，没有时再回退 `.iget-articles`。不要用更长的 `.main-content`，那里混有评论和页面外壳。
 
 **内容清理要点**：
 - 去掉正文开头的标题重复、日期、音频时长等元信息（通常在 `凡哥杂谈，你好` 或类似开场白之前）
@@ -92,15 +87,14 @@ if content_el:
 
 **得到文章现行流程**：
 
-1. `fetch_article.py ... --cdp` 生成标准 `source.md`、`images/`、`meta.json`。
+1. 先看登录态。墙还在就停等，不要抓预览。用户确认登录后，再跑
+   `fetch_article.py ... --cdp` 生成标准 `source.md`、`images/`、`meta.json`。
 2. 不在抓取层删除图片或清洗正文；非中文或需复杂清洗时，将整个工作包交给
    `trans-doc-to-md` Prepared Markdown Package 模式。
 3. 最终标题 Markdown 只交给 `upload-markdown-to-lexiang`，由 uploader 保持图片位置并
    渲染富元素。
 
-**适用场景**：得到 APP 专栏文章（`www.dedao.cn/course/article?id=xxx`）
-
-**计划**：考虑在 `fetch_article.py` 中增加得到专用检测和选择器（类似微信公众号的 `_is_wechat_article` 机制），自动使用 `.iget-articles` 提取正文。
+**适用场景**：得到 APP 专栏文章（`www.dedao.cn/course/article?id=xxx`）和知识红包分享页（`www.dedao.cn/share/packet?packetId=...`）。分享页必须在 CDP Chrome 登录且 `has_authority=true` 后再抓。
 
 ### SPA 网站 Playwright 直接出 PDF（正文隔离方案）
 

@@ -518,6 +518,35 @@ def _is_dedao_article(url: str) -> bool:
     return "dedao.cn" in hostname
 
 
+async def _paywall_login_block_reason(page) -> str:
+    """Return a reason when the page is still a login/paywall preview.
+
+    Empty string means the visible page can be archived. A reason means the
+    caller must stop without writing source.md and without retrying.
+    """
+    try:
+        reason = await page.evaluate(
+            """() => {
+                const body = document.body ? (document.body.innerText || '') : '';
+                const state = window.__INITIAL_STATE__;
+                const packet = state && state.packetInfo;
+                if (packet && packet.has_authority === false) {
+                    return '得到 has_authority=false，当前只是预览';
+                }
+                if (/剩余\\s*\\d+%/.test(body) && body.includes('继续学习')) {
+                    return '正文标注剩余百分比并要求继续学习';
+                }
+                if (body.includes('登录后继续学习') && /验证码|扫码登录/.test(body)) {
+                    return '页面停在登录墙';
+                }
+                return '';
+            }"""
+        )
+    except Exception:
+        return ""
+    return reason or ""
+
+
 def _is_webflow_blog(url: str) -> bool:
     """Check if the URL is a Webflow-based blog (claude.com, anthropic.com).
 
@@ -1080,7 +1109,7 @@ async def _extract_and_save(
         const selectors = isWechat
             ? ['#js_content', '.rich_media_content', 'article']
             : isDedao
-                ? ['.iget-articles', 'article']
+                ? ['.article-body', '.iget-articles']
                 : isWebflow
                     ? ['.u-rich-text-blog', '.w-richtext', 'article', 'main']
                     : [
@@ -1196,7 +1225,7 @@ async def _extract_and_save(
         title = title.replace(/\\s*[-|–—]\\s*(Cursor|Substack|Medium|LinkedIn|Notion|Ghost).*$/i, '').trim();
 
         const subtitleEl = document.querySelector('h3.subtitle, .subtitle, [class*="subtitle"]');
-        const subtitle = subtitleEl ? subtitleEl.innerText.trim() : '';
+        let subtitle = subtitleEl ? subtitleEl.innerText.trim() : '';
 
         // === 作者提取（增强选择器） ===
         let author = '';
@@ -1278,6 +1307,24 @@ async def _extract_and_save(
             if (publishedMeta) date = publishedMeta.getAttribute('content') || '';
         }
 
+        // 得到分享页/课程页：小节标题会占据 h1，真正标题、作者、发布时间在初始状态里。
+        if (isDedao && window.__INITIAL_STATE__) {
+            const info = window.__INITIAL_STATE__.packetInfo || {};
+            if (info.article_title) title = String(info.article_title).trim();
+            if (!subtitle && info.title) subtitle = String(info.title).trim();
+            const lecturer = info.lecturer_list && info.lecturer_list[0];
+            if (lecturer && lecturer.name) author = String(lecturer.name).trim();
+            const pub = window.__INITIAL_STATE__.articleInfo
+                && window.__INITIAL_STATE__.articleInfo.article
+                && window.__INITIAL_STATE__.articleInfo.article.PublishTime;
+            if (pub) {
+                const d = new Date(pub * 1000);
+                if (!Number.isNaN(d.getTime())) {
+                    date = d.toISOString().slice(0, 10);
+                }
+            }
+        }
+
         return { 
             title, subtitle, author, date, 
             content: articleEl.innerText, 
@@ -1319,7 +1366,7 @@ async def _extract_and_save(
             }
         }
         if (!articleEl) {
-            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '.entry-content', '.entry', '.entryPage', '[data-permalink-context]', '#quarto-document-content', 'main'];
+            const selectors = ['.article-body', '.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '.entry-content', '.entry', '.entryPage', '[data-permalink-context]', '#quarto-document-content', 'main'];
             let maxLen = 0;
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
@@ -1477,7 +1524,7 @@ async def _extract_and_save(
             articleEl = document.querySelector('.u-rich-text-blog') || document.querySelector('.w-richtext');
         }
         if (!articleEl) {
-            const selectors = ['.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '.entry-content', '.entry', '.entryPage', '[data-permalink-context]', '#quarto-document-content', 'main'];
+            const selectors = ['.article-body', '.iget-articles', '.available-content', '.post-content', 'article .body', 'article', '.entry-content', '.entry', '.entryPage', '[data-permalink-context]', '#quarto-document-content', 'main'];
             let maxLen = 0;
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
@@ -1952,6 +1999,16 @@ async def fetch_article(
             # Scroll to load lazy content
             await _scroll_page(page, is_wechat=is_wechat, is_dedao=is_dedao)
 
+            paywall_reason = await _paywall_login_block_reason(page)
+            if paywall_reason:
+                await page.close()
+                raise RuntimeError(
+                    "PAYWALL_LOGIN_REQUIRED: "
+                    f"{paywall_reason}。已停止，未写入 source.md。"
+                    "请在当前 CDP Chrome 窗口登录；登录完成并由用户确认后，再执行一次抓取。"
+                    "不要自动重试，不要注入 Cookie，不要改抓其他 URL。"
+                )
+
             # Extract content
             result = await _extract_and_save(
                 page,
@@ -2109,7 +2166,7 @@ async def fetch_article(
             }""")
             
             if paywall_status["hasPaywall"]:
-                print(f"⚠️  仍检测到付费墙（内容 {paywall_status['contentLength']} 字符），将提取当前可见内容")
+                print(f"⚠️  仍检测到付费墙（内容 {paywall_status['contentLength']} 字符），不会把预览当全文")
             else:
                 print(f"✅ 未检测到付费墙，内容 {paywall_status['contentLength']} 字符，继续抓取...")
 
@@ -2134,7 +2191,20 @@ async def fetch_article(
         print(f"📊 内容长度: {paywall_check['contentLength']} 字符, 付费墙: {paywall_check['hasPaywall']}")
 
         if paywall_check["hasPaywall"] and paywall_check["contentLength"] < 2000:
-            print("⚠️  仍被付费墙拦截，但会继续提取可见内容")
+            await page.close()
+            raise RuntimeError(
+                "PAYWALL_LOGIN_REQUIRED: 仍被付费墙拦截。"
+                "已停止，未写入 source.md。请在当前浏览器窗口登录，"
+                "用户确认后再抓取一次。不要自动重试。"
+            )
+        dedao_block = await _paywall_login_block_reason(page)
+        if dedao_block:
+            await page.close()
+            raise RuntimeError(
+                "PAYWALL_LOGIN_REQUIRED: "
+                f"{dedao_block}。已停止，未写入 source.md。"
+                "请在当前浏览器窗口登录，用户确认后再抓取一次。不要自动重试。"
+            )
 
         # Extract content and save
         result = await _extract_and_save(

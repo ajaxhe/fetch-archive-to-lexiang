@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.6.7"
+version: "4.6.8"
 author: ajaxhe
 license: MIT
 category: research
@@ -107,6 +107,24 @@ requires:
    并设 `NO_PROXY=127.0.0.1,localhost` 避免 CDP 探测被代理。
    启动 CDP 与执行抓取要写成同一条命令，跨 Bash 调用后台进程会被回收。
 6. 非微信来源确定新的独立工作目录，避免覆盖已有 `source.md`。
+
+### 付费墙：停等登录（L056）
+
+侦察或抓取一旦确认是付费墙、登录墙或截断预览，立刻停住。判定包括：正文出现「剩余 N%，继续学习」、`登录后继续学习`、得到 `packetInfo.has_authority === false`，或脚本退出码对应 `PAYWALL_LOGIN_REQUIRED`。
+
+停住之后只做这三件事：
+
+1. 把登录页留在**当前 CDP Chrome** 里（沿用已有 9222 窗口，不要新开 Testing Chrome）。
+2. 告诉用户：这是付费墙，请在这个窗口登录，登录完成后再说继续。
+3. 结束本轮，等用户明确说已经登录。
+
+停住期间禁止：
+
+- 把预览、试读或「剩余 N%」归档成全文
+- 解密或注入 Cookie、复制浏览器 profile、改抓课程页 / 试读页 / 其他 URL
+- 在用户确认登录之前反复调用 `fetch_article.py`
+
+用户确认登录后，只再抓一次。若脚本仍报 `PAYWALL_LOGIN_REQUIRED`，再次停住并说明墙还在，不要换一套办法继续试。
 
 平台细节见 `references/platform-specific.md`。
 
@@ -257,6 +275,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ 文档目录、去重结果和 VOD 媒体目录正确
 □ 人工增量修复已同步本地最终 Markdown
 □ 浏览器抓取复用了 CDP 上下文；未启动 Google Chrome for Testing（仅当来源无需登录态、且真 Chrome 的 CDP 端口在本机无法拉起时才可兜底，且必须在交付说明中标注该偏差，见 L050）
+□ 付费墙或登录墙：发现后已停住，未把预览当全文，未注入 Cookie、未改抓其他 URL、未在用户确认登录前重试；确认后只抓了一次。得到来源须 `has_authority=true`，且正文不再含「剩余 N%，继续学习」（见 L056）
 □ 播客：同说话人连续发言与短暂停顿已合并为大段；开场白只有少数大段
 □ 播客：每段明确标注“主持人/嘉宾”（有姓名则用姓名）；开场白未与第一问粘连
 □ 访谈视频：CAM++ 说话人区间已映射到 Whisper 文本；连续同一 spk 已合并
