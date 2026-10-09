@@ -258,6 +258,16 @@
 - **自检项**：交付的正文不是预览；得到来源 `has_authority=true`，且不再含「剩余 N%，继续学习」。发现墙之后、用户确认之前，没有任何第二次抓取。
 - **同步更新**：SKILL.md「付费墙：停等登录」与 Step 4 自检；`fetch_article.py`；`platform-specific.md`。
 
+#### L057: 禁止为锚点对账把正文链接拆到单独一行（2026-10-09，用户指出）
+- **问题**：Lilian Weng《Harness Engineering for Self-Improvement》双语稿为了通过长段落锚点，把句中的 markdown 链接拆成上一行文字、单独一行 `[link](url)`、下一行续写。乐享页面上链接前后被换行，阅读被打断。同篇还把 Harness 译成「驾驭层」。
+- **根因**：L039 只约束元信息里的裸 URL，被扩大成「正文链接也可以拆行」。对账失败被当成可以牺牲句内链接的理由。术语表又把行业固定英文概念译成了自造中文。
+- **正确做法**：
+  1. 正文链接保持源文的 `[文字](url)`，留在原句里。中文侧同样把链接写进对应句子。
+  2. 锚点若因 URL 被截断而 `VERIFY_ERROR`，记录差异，不要拆行重传。用户已手动改过的页面，测试和对账都不得整页覆盖。
+  3. Harness 及 Meta-Harness、Self-Harness、Continual Harness、Agentic Harness 在中文侧保留英文；需要类别词时写成「Harness 层」，英文与汉字之间留空格。不要译成「驾驭层」。
+- **自检项**：最终稿不存在单独成行的 `[link](url)` 或从句子中拆出的裸 URL；中文侧行业固定英文概念与术语表一致。
+- **同步更新**：SKILL.md Step 4 自检；`trans-doc-to-md` 的 translation.md 规则 3 与规则 5。
+
 #### L051: 本机真 Chrome **可以**提供 CDP —— 关键是 `--no-sandbox --in-process-gpu` + 复制日常 profile 带上登录态（2026-09-16，实战验证，修正 L050）
 - **背景**：抓 Lenny's Newsletter 付费长文 `60-creative-growth-ideas`（正文 32,732 字符，免费预览只有 23K 且被
   `data-testid="paywall"` 截断在清单第 5 条）。付费墙要求 CDP Chrome **必须带登录态**，
@@ -1016,6 +1026,7 @@
 | 2026-09-20 | X.com 长文用通用抓取器：85 段压成一行、标题变 `Conversation`、混入 `Upgrade to Premium`/`View quotes` 等按钮文案，而 `verification.ok` 仍为 true | 新增 `scripts/x_article_fetch.py` 解析 Draft.js 块结构（段落/加粗小标题/列表/封面图 + 作者日期浏览量 + 噪音硬校验）；强调标记不得 trim 边界空格；X 长文只有 1 张封面图（L052） | scripts/x_article_fetch.py, SKILL.md Step 1 + 脚本表, platform-specific.md, lessons-learned.md |
 | 2026-09-20 | a16z.news 二次抓取时 Substack 装饰分割线（`_2920x10`）以远程 URL 泄漏，撞上「仍含远程图片 URL」硬校验；同尺寸 3098×158 图曾被 L040 判为正文图 | 命中该守卫先清 work-dir 原样复跑（本次即恢复）；守卫新增 `_debug_remote_image.md` + 命中上下文打印；读图核实 3098×158 实为 `SUBSCRIBE FOR MORE FROM A16Z` 订阅横幅，修正 L040「按尺寸放行正文图」的表述（L053） | fetch_article.py（守卫诊断 + `[\[\]]` 转义告警）, lessons-learned.md |
 | 2026-09-20/21 | 《Stealing Reasoning Traces》分片上传第 26 片连续两次 WAF 403；同时本地 `lxmcp_` 凭证对所有工具报 `tool is not allowed`（非 401） | 内容签名触发（对照短文本通过）→ 行二分定位到 `Let’s fetch captcha.js.`（`fetch captcha` / `captcha.js` 单独都不命中）；附录 E 剩余 14.5 万字符改「页内附件块」逐字交付；凭证降权改走内置连接器（L054） | lexiang-upload.md, troubleshooting.md, lessons-learned.md |
+| 2026-10-09 | 用户指出链接前后被换行，且 Harness 不应译成「驾驭层」 | 正文链接留在原句；行业固定英文概念保留英文。已改过的乐享页不得为对账整页覆盖（L057） | SKILL.md Step 4, lessons-learned.md, trans-doc-to-md translation.md |
 
 ---
 
