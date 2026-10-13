@@ -268,6 +268,12 @@
 - **自检项**：最终稿不存在单独成行的 `[link](url)` 或从句子中拆出的裸 URL；中文侧行业固定英文概念与术语表一致。
 - **同步更新**：SKILL.md Step 4 自检；`trans-doc-to-md` 的 translation.md 规则 3 与规则 5。
 
+#### L058: a16z.com 正文必须锁定 `.js-article-content`，标题去掉站点后缀（2026-10-13）
+- **问题**：抓 `https://a16z.com/state-of-markets-ii/` 时，通用选择器按长度选中更长的 `main`。`source.md` 混入分享按钮、推荐文章和站点免责声明；`og:title` 又把标题写成 `State of Markets II | Andreessen Horowitz`。真正正文在 `.js-article-content`（本次 9 张图、约 7400 字符），`main` 里多出来的是作者头像、推荐卡和页脚。
+- **正确做法**：页面存在 `.js-article-content` 时，正文提取、图片枚举和 Markdown 转换都锁定它，禁止按长度回退到 `main`。标题清理要去掉 `| Andreessen Horowitz`。
+- **自检项**：`source.md` 不含 `Recommended For You`、`Want More a16z`、`Views expressed in “posts”`；标题是文章 H1，不是带站点名的 `og:title`。
+- **同步更新**：`fetch_article.py` 三处容器锁定；SKILL.md Step 4 自检；本文件。
+
 #### L051: 本机真 Chrome **可以**提供 CDP —— 关键是 `--no-sandbox --in-process-gpu` + 复制日常 profile 带上登录态（2026-09-16，实战验证，修正 L050）
 - **背景**：抓 Lenny's Newsletter 付费长文 `60-creative-growth-ideas`（正文 32,732 字符，免费预览只有 23K 且被
   `data-testid="paywall"` 截断在清单第 5 条）。付费墙要求 CDP Chrome **必须带登录态**，

@@ -1119,9 +1119,12 @@ async def _extract_and_save(
                         'main', '[class*="body"]'
                     ];
         
+        // a16z.com 正文在 .js-article-content。main 更长，会混入分享按钮、
+        // 推荐文章和站点免责声明，必须像 Substack 一样锁定，不能按长度回退。
+        const a16zArticle = document.querySelector('.js-article-content');
         let articleEl = isSubstack
             ? document.querySelector('.available-content')
-            : null;
+            : (a16zArticle || null);
         let maxLen = 0;
         if (!articleEl) {
             for (const sel of selectors) {
@@ -1222,7 +1225,7 @@ async def _extract_and_save(
         }
         if (!title) title = document.title;
         // 清理标题：去掉网站后缀（如 " - Cursor" " | Substack"）
-        title = title.replace(/\\s*[-|–—]\\s*(Cursor|Substack|Medium|LinkedIn|Notion|Ghost).*$/i, '').trim();
+        title = title.replace(/\\s*[-|–—]\\s*(Cursor|Substack|Medium|LinkedIn|Notion|Ghost|Andreessen Horowitz).*$/i, '').trim();
 
         const subtitleEl = document.querySelector('h3.subtitle, .subtitle, [class*="subtitle"]');
         let subtitle = subtitleEl ? subtitleEl.innerText.trim() : '';
@@ -1347,9 +1350,10 @@ async def _extract_and_save(
         const isWechat = args.isWechat;
         const isDedao = args.isDedao;
         const isSubstack = args.isSubstack;
+        const a16zArticle = document.querySelector('.js-article-content');
         let articleEl = isSubstack
             ? document.querySelector('.available-content')
-            : null;
+            : (a16zArticle || null);
         if (isWechat) {
             // WeChat: use #js_content directly
             articleEl = document.querySelector('#js_content') || document.querySelector('.rich_media_content');
@@ -1514,9 +1518,10 @@ async def _extract_and_save(
         const isWebflow = args.isWebflow;
         const isSubstack = args.isSubstack;
         
+        const a16zArticle = document.querySelector('.js-article-content');
         let articleEl = isSubstack
             ? document.querySelector('.available-content')
-            : null;
+            : (a16zArticle || null);
         if (isWechat) {
             articleEl = document.querySelector('#js_content') || document.querySelector('.rich_media_content');
         }

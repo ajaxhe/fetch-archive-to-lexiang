@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.6.8"
+version: "4.6.9"
 author: ajaxhe
 license: MIT
 category: research
@@ -296,6 +296,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ simonwillison.net / Django 博文：正文容器是 `.entry` / `[data-permalink-context]`，不是 `article`/`main`；标题优先 `.entry h2` 与 `og:title`，禁止用站点 masthead H1
 □ 提取正文很长但 Markdown 转换结果过短必须报错重抓；图片 alt 不得含未转义 `[]`，引用对账不能用 `!\[[^\]]*\]`
 □ Substack 自定义域（如 latent.space）必须被识别为 Substack；白名单未命中时，页面出现 `.available-content` + substackcdn 即锁定正文容器，禁止回退到更长的 article/main；未下载的 32×32 头像不得以远程 URL 残留在 Markdown
+□ a16z.com：正文容器锁定 `.js-article-content`，禁止按长度回退到更长的 `main`（会混入分享按钮、推荐文章和站点免责声明）；标题去掉 `| Andreessen Horowitz` 站点后缀
 ```
 
 ## Step 5：自省
