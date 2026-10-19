@@ -1,0 +1,33 @@
+{
+  "title": "How Codex Happened",
+  "source_url": "https://every.to/p/how-codex-happened",
+  "source_title": "How Codex Happened",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "",
+  "author": "Dan Shipper",
+  "date": "2026-10-15",
+  "content_length": 47598,
+  "image_count": 9,
+  "images": [
+    "images/img_01_461ebf6f.webp",
+    "images/img_02_9ecb3796.png",
+    "images/img_03_508bb6ac.png",
+    "images/img_11_dee0f9eb.webp",
+    "images/img_12_80e79b3a.webp",
+    "images/img_13_28e4750c.webp",
+    "images/img_14_800b62e3.png",
+    "images/img_15_3989533a.webp",
+    "images/img_16_0ab53ff2.webp"
+  ],
+  "fetched_at": "2026-10-19T21:06:56.592176",
+  "verification": {
+    "ok": true,
+    "source_sha256": "ddb79369124d2c9dd05181a6c447b6ef2a5ed3aa9eda3dc5b39ac4da00a0be18",
+    "markdown_image_references": 9,
+    "unique_local_images": 9,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  },
+  "display_title": "How Codex Happened / Codex 是如何诞生的"
+}

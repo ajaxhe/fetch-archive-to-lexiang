@@ -613,6 +613,18 @@
      先对账 company，不要改目录或回退到另一个知识库。
 - **自检项**：最终 Markdown 不含 `marginalia-cite`；uploader JSON 的 `company_from`
   与目标知识库一致；`verified=true`。
+- **不要外推到访谈脚注**：`[[N]](/p/...?cite=&utm_#fragment)` 不是这条哈希。删查询串或把 `_` 编成 `%5F` 会让双语校验失败。见 L059。
+
+#### L059: Every.to 视觉长文要去掉订阅卡和动画碎图；访谈脚注链接不要改写（2026-10-19，How Codex Happened）
+- **问题**：`How Codex Happened` 第一次抓取混入订阅卡 CTA，并下载了几十张人像裁切和 `blob:` 动画帧。上传校验又报缺少长段落锚点：相对脚注里的 `_`、`#` 被拆进锚点，绝对链接的查询串也残留。
+- **根因**：
+  1. 正文插图是滚进视口后才出现的成品图（长边大约 ≥1024px）。`.companion-module-box` 等订阅模块会把 CTA 粘到下一段。`.scene-sequence-mobile`、小于约 700px 的图层和 `blob:` 是动画碎帧。
+  2. 乐享 clean 文本对链接有两种形态。`https://` 和单括号 `[文字](/p/...)` 会丢掉目标；`[[N]](/p/...)` 会被转义成解不开的 `[\[N\]](/p/...)`，href 留在正文里。锚点若先把 `_` 和 `#` 换成空格，两侧对不上。
+- **正确做法**：
+  1. 抓取 Every.to 时先滚动页面，再删除订阅模块、移动端重复场景、`blob:` 和长边小于约 700px 的图。成品插图保留。已落在 `fetch_article.py` 的 `_prepare_every_article`。
+  2. 终稿保留访谈脚注原句和原始 URL。不要为了锚点删查询串、改 `%5F`，也不要把链接单独换行（L057）。
+  3. 锚点清洗在 `upload-markdown-to-lexiang`：整段去掉 https，单括号相对链接去掉 href，双括号脚注保留 href。失败页按 L032 用原 `entry_id` 覆盖。
+- **自检项**：`source.md` 无 `blob:`、无订阅 CTA；图片是正文插图而不是碎帧；双语校验通过；uploader `verified=true`。
 
 #### L036: 抓取正确性必须在脚本内一次验收；固定等待、串行图片和默认截图拖慢流程（2026-07-23，用户要求复盘优化）
 - **问题**：同一篇 Lenny/Substack 文章因标题、正文容器和图片问题连续重抓 5 次；

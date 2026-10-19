@@ -890,6 +890,47 @@ def _convert_image_format(img_path: Path) -> bool:
     return False
 
 
+async def _prepare_every_article(page) -> None:
+    """Load Every.to illustrations and drop subscription modules plus animation fragments.
+
+    Every.to stories mix the article with companion subscription cards and
+    multi-layer hero/scene animations. Those cards glue their CTA onto the next
+    paragraph, and the animation layers download as dozens of small crops or
+    blob: URLs. The readable illustrations are the finished-ink assets, which
+    are at least about 1024px on the long side once the page has been scrolled.
+    """
+    host = urllib.parse.urlparse(page.url or "").hostname or ""
+    if host != "every.to" and not host.endswith(".every.to"):
+        return
+    print("📰 Every.to：滚动加载插图，并去掉订阅模块与动画碎图")
+    try:
+        await page.set_viewport_size({"width": 1280, "height": 900})
+    except Exception:
+        pass
+    await page.evaluate("""async () => {
+        const delay = ms => new Promise(r => setTimeout(r, ms));
+        const height = Math.max(
+            document.body.scrollHeight || 0,
+            document.documentElement.scrollHeight || 0
+        );
+        for (let y = 0; y < height; y += 700) {
+            window.scrollTo(0, y);
+            await delay(180);
+        }
+        window.scrollTo(0, 0);
+        await delay(500);
+        document.querySelectorAll(
+            '.companion-module-box, .article-module-entry, .growth-every-ad, ' +
+            '.growth-catalog-ad, .growth-entry, .growth-catalog-intro, .scene-sequence-mobile'
+        ).forEach(el => el.remove());
+        document.querySelectorAll('img').forEach(img => {
+            const src = img.currentSrc || img.src || '';
+            const w = img.naturalWidth || 0;
+            if (src.startsWith('blob:') || (w > 0 && w < 700)) img.remove();
+        });
+    }""")
+
+
 async def _scroll_page(page, is_wechat: bool = False, is_dedao: bool = False):
     """Scroll the page to trigger lazy-loaded content.
     
@@ -1036,10 +1077,11 @@ async def _extract_and_save(
     debug_screenshot: bool = False,
 ) -> str:
     """Extract article content, download images, convert to Markdown, and save.
-    
+
     This is the shared extraction logic used by both CDP mode and cookie-injection mode.
     Returns the path to the saved source.md.
     """
+    await _prepare_every_article(page)
     if debug_screenshot:
         try:
             await page.screenshot(path="/tmp/article_fetch_debug.png", full_page=False)
@@ -1655,6 +1697,7 @@ async def _extract_and_save(
                 }
                 case 'img': {
                     const src = node.src || node.getAttribute('data-src') || '';
+                    if (src.startsWith('blob:')) return '';
                     const dataSrc = node.getAttribute('data-src') || '';
                     const alt = (node.alt || '').replace(/[\\[\\]]/g, '');
                     if (!src || src.includes('data:image/svg')) return '';
