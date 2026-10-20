@@ -1,0 +1,35 @@
+{
+  "title": "What on earth is going on with AI pricing and packaging?",
+  "source_url": "https://www.elenaverna.com/p/what-on-earth-is-going-on-with-ai",
+  "source_title": "What on earth is going on with AI pricing and packaging?",
+  "source_type": "article",
+  "language": "en",
+  "parent_id": "cce6e8f30e29448e8316a897a72dc453",
+  "display_title": "What on earth is going on with AI pricing and packaging? / AI 的定价与套餐到底怎么了？",
+  "subtitle": "AI companies have a pricing problem. And I work in AI…",
+  "author": "Elena Verna",
+  "date": "2026-10-16T22:22:50+08:00",
+  "content_length": 14097,
+  "image_count": 10,
+  "images": [
+    "images/img_01_35d60d33.png",
+    "images/img_02_116faa0c.png",
+    "images/img_03_57bc343a.jpeg",
+    "images/img_04_d744a28e.png",
+    "images/img_05_acdbd6cf.png",
+    "images/img_06_e1cb9fe2.png",
+    "images/img_07_caebf0f6.png",
+    "images/img_08_00415672.png",
+    "images/img_09_9914ee0d.png",
+    "images/img_10_989543ac.png"
+  ],
+  "fetched_at": "2026-10-20T15:28:08.665373",
+  "verification": {
+    "ok": true,
+    "source_sha256": "382e05be350ec93066772546d9b22c7a6bce4f39edc5a4318c7a46d51e461aef",
+    "markdown_image_references": 10,
+    "unique_local_images": 10,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}
