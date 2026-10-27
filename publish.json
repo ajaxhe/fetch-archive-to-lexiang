@@ -1,10 +1,22 @@
 {
   "skill_name": "fetch-archive-to-lexiang",
   "display_name": "Fetch & Archive to Lexiang",
-  "version": "4.1.0",
+  "version": "4.6.10",
   "github_repo": "ajaxhe/fetch-archive-to-lexiang",
   "category": "research",
-  "tags": ["fetch", "archive", "youtube", "podcast", "pdf", "transcribe", "lexiang", "paywall", "substack", "medium", "chinese"],
+  "tags": [
+    "fetch",
+    "archive",
+    "youtube",
+    "podcast",
+    "pdf",
+    "transcribe",
+    "lexiang",
+    "paywall",
+    "substack",
+    "medium",
+    "chinese"
+  ],
   "clawscan_note": "Uses Chrome CDP for authenticated scraping and yt-dlp/Whisper for transcription. Content processing and Markdown publishing are delegated to trans-doc-to-md and upload-markdown-to-lexiang.",
   "dependencies": [
     {
@@ -18,9 +30,36 @@
   ],
   "pr_description": "## fetch-archive-to-lexiang\n\nSource discovery, fetching, standardized work packages, and Lexiang archival orchestration.\n\n**Features:**\n- Authenticated article fetching with images\n- YouTube download + Whisper transcription\n- Podcast Show Notes + transcription\n- Prepared Markdown Package handoff to trans-doc-to-md\n- Deduplicated Lexiang directory and VOD orchestration",
   "platforms": {
-    "clawhub": { "enabled": true },
-    "agentskillhub": { "enabled": true },
-    "skillshubai": { "enabled": true },
-    "agentskillshub": { "enabled": false }
+    "clawhub": {
+      "enabled": true
+    },
+    "agentskillhub": {
+      "enabled": true
+    },
+    "skillshubai": {
+      "enabled": true
+    },
+    "agentskillshub": {
+      "enabled": false
+    }
+  },
+  "changelog": "重写中文名称与检索型描述，补充 skillhub.cn 中文元数据",
+  "platform_overrides": {
+    "skillhub": {
+      "slug": "fetch-archive-to-lexiang",
+      "displayName": "外网文章归档到乐享",
+      "summary": "把公众号文章、网页、视频、播客、PDF 抓取并标准化归档进乐享知识库：来源侦察、下载与转录、去重、目录编排，产出可检索的正文与标准工作包。",
+      "description": "面向「把外部内容变成知识库资产」：丢进来一个或多个链接（微信公众号文章、Substack/Medium 博客、arXiv 论文、普通网页、YouTube/播客、PDF），本 Skill 先做来源侦察判断抓用方式，再下载正文或音视频并转录，统一产出标准工作包（source.md + images/ + meta.json），最后按目录策略写入乐享、自动去重、编排视频与音频 VOD。微信公众号文章走乐享 MCP 原生导入；非中文内容交给「文档翻译成 Markdown」做保真双语化，页面写入统一由「Markdown 上传到乐享」完成。适用场景：行业资讯沉淀、竞品与客户案例收集、课程演讲视频转图文笔记、论文研报入库、个人阅读库自动归档。关键词：网页抓取、公众号导入、视频转录、播客转文字、PDF 解析、去重归档、知识库同步、乐享归档。",
+      "tags": [
+        "外网抓取",
+        "公众号归档",
+        "视频转录",
+        "播客转文字",
+        "PDF归档",
+        "知识库同步",
+        "去重",
+        "乐享"
+      ]
+    }
   }
 }
