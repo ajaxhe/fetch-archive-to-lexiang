@@ -274,6 +274,12 @@
 - **自检项**：`source.md` 不含 `Recommended For You`、`Want More a16z`、`Views expressed in “posts”`；标题是文章 H1，不是带站点名的 `og:title`。
 - **同步更新**：`fetch_article.py` 三处容器锁定；SKILL.md Step 4 自检；本文件。
 
+#### L060: canaan.com 标题带站点后缀，分享按钮和 Tags 会粘进正文（2026-10-28）
+- **问题**：抓 `https://www.canaan.com/news/saas-trained-us-to-ignore-marginal-cost-ai-won-t` 时，`meta.title` 用了 `<title>` / `og:title` 的 `… - Canaan`，页面 H1 没有这个后缀。SVG 分享按钮的 `<title>`（`Canaan on Facebook/Twitter/LinkedIn`）和文末 `Tags` 链进了正文；分享行和 H1 之间没有空行，校验器把它们当成同一段。作者在 `.details p.large a`，日期在 `.details p.date`，没有 JSON-LD，所以 `meta.author` / `meta.date` 为空。`#article-body` 里没有图片，空的 `.featured-image` 不是漏图。
+- **正确做法**：正文锁定 `#article-body`；标题用页面 H1，去掉 ` - Canaan`。作者和日期只从 `.details` 写进文首一次。分享按钮标题和 `Tags` 在冻结 `source.md` 之前删掉。一旦写进 `source.md`，双语阶段不能再删（L041），只能把这段站点装饰留在文末才能通过段落校验。
+- **自检项**：`source.md` 不含 `Canaan on Facebook`、`**Tags**`；`meta.title` 等于 H1，不含 ` - Canaan`；`meta.author` 与 `meta.date` 非空。
+- **同步更新**：本文件。抓取脚本尚未按此锁定容器，下次遇到 canaan.com 再改 `fetch_article.py`。
+
 #### L051: 本机真 Chrome **可以**提供 CDP —— 关键是 `--no-sandbox --in-process-gpu` + 复制日常 profile 带上登录态（2026-09-16，实战验证，修正 L050）
 - **背景**：抓 Lenny's Newsletter 付费长文 `60-creative-growth-ideas`（正文 32,732 字符，免费预览只有 23K 且被
   `data-testid="paywall"` 截断在清单第 5 条）。付费墙要求 CDP Chrome **必须带登录态**，
@@ -1045,6 +1051,7 @@
 | 2026-09-20 | a16z.news 二次抓取时 Substack 装饰分割线（`_2920x10`）以远程 URL 泄漏，撞上「仍含远程图片 URL」硬校验；同尺寸 3098×158 图曾被 L040 判为正文图 | 命中该守卫先清 work-dir 原样复跑（本次即恢复）；守卫新增 `_debug_remote_image.md` + 命中上下文打印；读图核实 3098×158 实为 `SUBSCRIBE FOR MORE FROM A16Z` 订阅横幅，修正 L040「按尺寸放行正文图」的表述（L053） | fetch_article.py（守卫诊断 + `[\[\]]` 转义告警）, lessons-learned.md |
 | 2026-09-20/21 | 《Stealing Reasoning Traces》分片上传第 26 片连续两次 WAF 403；同时本地 `lxmcp_` 凭证对所有工具报 `tool is not allowed`（非 401） | 内容签名触发（对照短文本通过）→ 行二分定位到 `Let’s fetch captcha.js.`（`fetch captcha` / `captcha.js` 单独都不命中）；附录 E 剩余 14.5 万字符改「页内附件块」逐字交付；凭证降权改走内置连接器（L054） | lexiang-upload.md, troubleshooting.md, lessons-learned.md |
 | 2026-10-09 | 用户指出链接前后被换行，且 Harness 不应译成「驾驭层」 | 正文链接留在原句；行业固定英文概念保留英文。已改过的乐享页不得为对账整页覆盖（L057） | SKILL.md Step 4, lessons-learned.md, trans-doc-to-md translation.md |
+| 2026-10-28 | canaan.com 标题带 ` - Canaan`，分享按钮和 Tags 粘进正文，作者日期未进 meta | 正文应锁定 `#article-body`，标题用 H1；分享按钮和 Tags 必须在冻结 source.md 前删除，否则双语阶段删不掉（L060） | lessons-learned.md |
 
 ---
 
