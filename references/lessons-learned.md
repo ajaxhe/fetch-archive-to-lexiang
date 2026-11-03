@@ -187,6 +187,43 @@
 
 ### 🟡 P1 — 偶尔犯的错误（需要注意）
 
+#### L061: 上传器两个「文本层」缺陷——短段落锚点被截断在 URL 中间 / 中文加粗以全角标点收尾不被解析（2026-11-01，实战踩坑）
+
+- **背景**：归档 felixrieseberg.com 的《How to be more ambitious》时，页面其实已经完整写入
+  （`block_list_block_children` 里 53 个块一个不缺），但 uploader 报
+  `VERIFY_ERROR: 缺少长段落锚点 2/53`；重新上传后 `verified=true`，却又发现页面上出现字面量
+  `**速度：**` 这种没被解析的加粗。
+- **根因 1（锚点）**：`_anchors()` 用 `_plain_text()` 生成锚点，而 `_plain_text()` 把
+  `[显示文字](url)` 渲染成「显示文字 + URL」，随后截断到 100 字符。当短段落（如配图鸣谢
+  `The image for this post is by [Francisco Goya](url)`）的 100 字符正好切在 URL 中间时，
+  `normalize_for_compare()` 剥掉 URL 后，源侧留下多余空格、远端侧没有，子串比对必然失败。
+  → 段落本身没丢，是校验假阴性。
+- **根因 2（加粗）**：乐享服务端的 `block_convert_content_to_blocks` 不解析以**全角标点收尾**
+  的加粗，例如 `**速度：**`、`**你希望接下来发生什么？**` 会原样保留星号；而 `**应该更有野心**`、
+  `**Speed:**`（ASCII 冒号）能正常解析。中文标签式加粗是重灾区。
+- **正确做法（已固化）**：
+  1. `lexiang_upload_core._anchors()` 生成锚点前先解开 markdown 链接、剥掉裸 URL，再截断
+     （2026-11-01 已改）。
+  2. 生成双语稿时，中文加粗**不得以全角标点收尾**：写 `**速度**：` 而不是 `**速度：**`。
+     批量检查用 `grep -nE` 匹配两侧双星号包住、末尾是全角冒号/问号的片段；注意替换正则
+     不能贪婪跨段，否则会把长句加粗的两端移到句中造成加粗错位（本次误伤过一次，已回滚）。
+  3. 出现 `verified=false` 但块数正确时，先判断是假阴性还是真丢块：拉一次
+     `block_list_block_children` 数块、数图，再决定修校验还是补内容；确认要重传时先
+     `entry_delete_entry` 删掉残缺页，避免同一目录留重复页。
+- **自检项**：上传后必须数线上 `block_type` 分布（`p`/`h2`/`bulleted_list`/`image`/`quote`），
+  并搜一遍线上文本里有没有字面量双星号；有就是加粗没解析。
+
+#### L062: felixrieseberg.com 抓取会混入阅读器 UI；author 字段被整段 bio 污染（2026-11-01）
+
+- **现象**：`fetch_article.py` 抓回的 `source.md` 顶部混入站点阅读器界面：
+  `[◂ POSTS]`、`PART 1/5 10 MIN LEFT`、`▶︎ PLAY0:00:00 ↑ ↓ SCROLL · ← → SECTIONS`、
+  `TYPESET`、`Published 13 October 2026 Reading time 8 min Topics claude`；
+  `meta.json.author` 变成 `Felix Rieseberg I'm an EM at Anthropic…` 后再接 `X / LinkedIn / GitHub`。
+- **正确做法**：该站按「标题行 → 首个图片引用行」之间整体剔除 chrome，重建头部
+  `> 作者: <姓名> | 日期: YYYY-MM-DD`；author 只留姓名；改完重算
+  `meta.verification.source_sha256`（source.md 属抓取阶段产物，冻结前可以清噪音，
+  冻结后不可再改）。
+
 #### L054: 分片上传被 WAF 按**内容签名**拦截；同时 `lxmcp_` 凭证整体降权（2026-09-20/21，实战踩坑）
 - **问题**：arXiv 论文《Stealing Reasoning Traces from Proprietary LLM APIs》正文双语稿 1–25 片
   全部写入成功，第 26 片起连续两次 `UPLOAD_ERROR: MCP HTTP 403` + HTML「WAF拦截页面」。
