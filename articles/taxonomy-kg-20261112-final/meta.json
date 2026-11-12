@@ -1,0 +1,21 @@
+{
+  "title": "Taxonomy vs. ontology vs. knowledge graph: What’s the difference?",
+  "display_title": "Taxonomy vs. ontology vs. knowledge graph: What’s the difference? / 分类法、本体与知识图谱：有什么区别？",
+  "source_url": "https://neo4j.com/blog/knowledge-graph/taxonomy-vs-ontology-vs-knowledge-graph/",
+  "source_title": "Taxonomy vs. ontology vs. knowledge graph: What’s the difference?",
+  "source_type": "article",
+  "language": "en",
+  "author": "John Stegeman",
+  "date": "2026-06-16",
+  "parent_id": "b2af0a0926634ea49ac12b4eaef51c4a",
+  "verification": {
+    "ok": true,
+    "note": "抓取包 v3 清洗版：去掉站点导航/推广卡/分享/相关推荐/重复 H1，修正作者与标题，补回 JSON-LD 中的 6 个 FAQ 问题",
+    "image_references": [
+      "images/img_02_41304135.png",
+      "images/img_03_c10b4d69.png",
+      "images/img_04_eb228965.png",
+      "images/img_05_5d40b0f3.png"
+    ]
+  }
+}

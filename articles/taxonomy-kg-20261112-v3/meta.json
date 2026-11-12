@@ -1,0 +1,31 @@
+{
+  "title": "Taxonomy vs. ontology vs. knowledge graph: What's the difference? - Neo4j Graph Intelligence Platform",
+  "source_url": "https://neo4j.com/blog/knowledge-graph/taxonomy-vs-ontology-vs-knowledge-graph/",
+  "source_title": "Taxonomy vs. ontology vs. knowledge graph: What's the difference? - Neo4j Graph Intelligence Platform",
+  "source_type": "article",
+  "language": "non-zh",
+  "subtitle": "",
+  "author": "Alyssa Di Pasqualucci",
+  "date": "2026-06-16T15:21:21-07:00",
+  "content_length": 12607,
+  "image_count": 8,
+  "images": [
+    "images/img_01_97b7e7f4.jpg",
+    "images/img_02_41304135.png",
+    "images/img_03_c10b4d69.png",
+    "images/img_04_eb228965.png",
+    "images/img_05_5d40b0f3.png",
+    "images/img_06_f545f268.jpg",
+    "images/img_07_bd04f632.jpg",
+    "images/img_08_c26039a7.jpg"
+  ],
+  "fetched_at": "2026-11-12T19:53:57.665588",
+  "verification": {
+    "ok": true,
+    "source_sha256": "763133b55b3b83decb4627f345df084f8fd209cee05c69f990e86173a749566b",
+    "markdown_image_references": 8,
+    "unique_local_images": 8,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}

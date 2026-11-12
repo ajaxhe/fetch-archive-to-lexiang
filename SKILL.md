@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.6.11"
+version: "4.6.12"
 author: ajaxhe
 license: MIT
 category: research
@@ -278,7 +278,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ 付费墙或登录墙：发现后已停住，未把预览当全文，未注入 Cookie、未改抓其他 URL、未在用户确认登录前重试；确认后只抓了一次。得到来源须 `has_authority=true`，且正文不再含「剩余 N%，继续学习」（见 L056）
 □ 播客：同说话人连续发言与短暂停顿已合并为大段；开场白只有少数大段
 □ 播客：每段明确标注“主持人/嘉宾”（有姓名则用姓名）；开场白未与第一问粘连
-□ 访谈视频：CAM++ 说话人区间已映射到 Whisper 文本；连续同一 spk 已合并
+□ 访谈视频：CAM++ 说话人区间已映射到 Whisper 文本；连续同一 spk 已合并；访谈说话人数不少于 2。SenseVoice 链路不加载 ct-punc；长访谈已传 preset_spk_num
 □ 访谈视频：主持人/嘉宾标签完整；多位嘉宾没有因同属 guest 被误合并
 □ 新建页面上传失败时已自动回滚，不在日期目录或知识库留下临时空页面
 □ 上传后目标目录与上传前快照对账，仅保留最终页面和 VOD；无 test/v2/空白/重复条目

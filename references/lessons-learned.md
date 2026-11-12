@@ -102,6 +102,23 @@
   回归样例，必须得到角色正确的少数大段；匿名 metadata 仍有角色标签；另构造两位嘉宾
   连续发言样例，确保不同 `spk` 不合并。播客和 YouTube 两条链路都必须覆盖。
 
+#### L063: YouTube 长访谈被收成 1 个说话人；SenseVoice 不能加载 ct-punc（2026-11-12，自检发现）
+- **背景**：David Senra × Alexandr Wang 访谈（72 分钟）。第一次分离日志有
+  `punc_model is missing, falling back to vad_segment mode`，结果「识别到 1 个说话人」，
+  45 段全部标成主持人。补上 `punc_model="ct-punc"` 后约 27 分钟崩溃：
+  `length mismatch between punc and timestamp`，`distribute_spk` 里句子起止为 None。
+- **根因**：
+  1. SenseVoice 没有字级时间戳。FunASR 看到没有 timestamp 会强制退回 `vad_segment`；
+     若已加载标点模型，则会走进 `punc_segment` 并在 `distribute_spk` 崩溃。
+     播客链路的 `ct-punc` 不能照搬到 YouTube 的 SenseVoice 链路。
+  2. 声纹片段超过约 2048 个且未传 `preset_spk_num` 时，`ClusterBackend` 改走 UMAP-HDBSCAN，
+     这次把两位说话人收成 1 个。指定人数后才走谱聚类。
+- **正确做法**：YouTube `diarize_audio` 不加载 `ct-punc`，`merge_vad=False`，
+  访谈传入 `preset_spk_num`（主持人 + 嘉宾人数）。识别到的说话人少于 2 个必须报错，
+  禁止交付。角色判定与播客相同：话量领先 ≥ 1.3 倍的是嘉宾，避免前 45 秒长答把嘉宾标成主持人。
+  已有 `source.md` 时换新工作目录重跑。
+- **自检项**：访谈成稿里主持人与嘉宾标签都出现；开场提问和随后长答不是同一人。
+
 #### L024: 图后追加段以 `---` 开头 → 紧随的 `##` 标题无法解析为 heading block（2026-07-13, 用户反馈）
 - **背景**：PDF 双语包转存乐享后，`## Introduction / 引言` 在编辑器中显示为字面量 `## Introduction / 引言` 普通段落，而非二级标题。同文档内 `## Methods`、`### Shield Mass Analysis` 等标题正常。
 - **根因（两层）**：
@@ -1089,6 +1106,7 @@
 | 2026-09-20/21 | 《Stealing Reasoning Traces》分片上传第 26 片连续两次 WAF 403；同时本地 `lxmcp_` 凭证对所有工具报 `tool is not allowed`（非 401） | 内容签名触发（对照短文本通过）→ 行二分定位到 `Let’s fetch captcha.js.`（`fetch captcha` / `captcha.js` 单独都不命中）；附录 E 剩余 14.5 万字符改「页内附件块」逐字交付；凭证降权改走内置连接器（L054） | lexiang-upload.md, troubleshooting.md, lessons-learned.md |
 | 2026-10-09 | 用户指出链接前后被换行，且 Harness 不应译成「驾驭层」 | 正文链接留在原句；行业固定英文概念保留英文。已改过的乐享页不得为对账整页覆盖（L057） | SKILL.md Step 4, lessons-learned.md, trans-doc-to-md translation.md |
 | 2026-10-28 | canaan.com 标题带 ` - Canaan`，分享按钮和 Tags 粘进正文，作者日期未进 meta | 正文应锁定 `#article-body`，标题用 H1；分享按钮和 Tags 必须在冻结 source.md 前删除，否则双语阶段删不掉（L060） | lessons-learned.md |
+| 2026-11-12 | neo4j.com 公开博客转存：抓取器对无 cookies 的通用站点弹「请登录」并 `input()` 卡死；抓回的标题带站点后缀、作者取了 JSON-LD 的 SEO 作者、FAQ 只剩答案丢了 6 个问题、页尾混入 4 张推广/头像图；`verification.ok` 仍为 true | 公开来源先确认无付费墙，再用 `printf '\n' \| ...` 跳过误判的登录确认；FAQ 问题从 JSON-LD `@type:Question.name` 补回，作者取页面 byline（John Stegeman）；清洗后**另建工作目录**当 source.md（不覆盖抓取原包），只留 4 张正文图（hero + 3 张示意图），图片用硬链接（软链接会被 uploader 判「图片路径越出 Markdown 目录」）；TOC 的页内锚点 `[text](#h-...)` 会让 uploader 长段落锚点稳定误报，改成完整 https URL 后对账通过；个人 `lxmcp_` 凭证 401 时可用会话级宿主连接器凭证（`CODEBUDDY_MCP_CONFIG` + `preset=all`，不落盘）临时走通，用户续期后仍回归 `--profile csig`（L064，🟢 P2） | lessons-learned.md |
 
 ---
 

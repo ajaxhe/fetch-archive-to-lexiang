@@ -218,12 +218,15 @@ def transcribe_audio(audio_path: str, model_name: str = "base") -> dict:
     return result
 
 
-def diarize_audio(audio_path: str) -> list[dict]:
+def diarize_audio(audio_path: str, speaker_count: int | None = None) -> list[dict]:
     """用 SenseVoiceSmall + CAM++ 获取多语言说话人时间区间。"""
     from funasr import AutoModel
     from funasr.utils.postprocess_utils import rich_transcription_postprocess
 
     print("👥 使用 FunASR SenseVoiceSmall + CAM++ 分离说话人...")
+    # SenseVoice 没有字级时间戳。加载 ct-punc 会切到 punc_segment，
+    # 随后在 distribute_spk 里因句子起止为 None 崩溃。保持 vad_segment。
+    # 超过约 2048 个声纹片段时，不指定人数会走 UMAP-HDBSCAN，长访谈会被收成 1 人。
     model = AutoModel(
         model="iic/SenseVoiceSmall",
         vad_model="fsmn-vad",
@@ -232,15 +235,17 @@ def diarize_audio(audio_path: str) -> list[dict]:
         device="cpu",
         disable_update=True,
     )
-    result = model.generate(
-        input=audio_path,
-        cache={},
-        language="auto",
-        use_itn=True,
-        batch_size_s=60,
-        merge_vad=True,
-        merge_length_s=15,
-    )
+    generate_kwargs = {
+        "input": audio_path,
+        "cache": {},
+        "language": "auto",
+        "use_itn": True,
+        "batch_size_s": 60,
+        "merge_vad": False,
+    }
+    if speaker_count and speaker_count > 1:
+        generate_kwargs["preset_spk_num"] = int(speaker_count)
+    result = model.generate(**generate_kwargs)
     sentences: list[dict] = []
     for item in result:
         for sent in item.get("sentence_info") or []:
@@ -263,7 +268,13 @@ def diarize_audio(audio_path: str) -> list[dict]:
             "CAM++ 未返回 sentence_info；请升级 funasr>=1.3.2，"
             "或明确传 --no-speakers 使用无角色转录"
         )
-    print(f"   ✅ 识别到 {len({s['spk'] for s in sentences})} 个说话人")
+    speaker_ids = {s["spk"] for s in sentences}
+    print(f"   ✅ 识别到 {len(speaker_ids)} 个说话人")
+    if speaker_count and speaker_count > 1 and len(speaker_ids) < 2:
+        raise RuntimeError(
+            "访谈只识别到 1 个说话人。长音频需要 preset_spk_num；"
+            "禁止把单说话人文字稿当作访谈原文"
+        )
     return sentences
 
 
@@ -349,13 +360,23 @@ def assign_host_guest_roles(segments: list[dict], intro_seed_end: float = 45.0) 
                 min(float(segment["end"]), intro_seed_end) - float(segment["start"]),
             )
     intro_host = max(intro_durations, key=intro_durations.get) if intro_durations else None
-    scores: dict[int, float] = {}
-    for sid, items in by_speaker.items():
-        text = " ".join(item["text"] for item in items)
-        scores[sid] = _host_score(text) - _guest_score(text)
-        if sid == intro_host:
-            scores[sid] += 4.0
-    host_sid = max(scores, key=scores.get)
+    char_counts = {
+        sid: sum(len(item.get("text") or "") for item in items)
+        for sid, items in by_speaker.items()
+    }
+    ranked = sorted(char_counts, key=char_counts.get, reverse=True)
+    host_sid = None
+    # 嘉宾开场就长答时，前 45 秒时长会把嘉宾当成主持人。话量差足够大时以话量为主。
+    if len(ranked) >= 2 and char_counts[ranked[0]] >= char_counts[ranked[1]] * 1.3:
+        host_sid = ranked[1]
+    else:
+        scores: dict[int, float] = {}
+        for sid, items in by_speaker.items():
+            text = " ".join(item["text"] for item in items)
+            scores[sid] = _host_score(text) - _guest_score(text)
+            if sid == intro_host:
+                scores[sid] += 4.0
+        host_sid = max(scores, key=scores.get)
     for segment in segments:
         segment["role"] = "host" if int(segment.get("spk", 0)) == host_sid else "guest"
     return segments
@@ -649,7 +670,16 @@ def main():
         )
         video_info["speaker_diarization"] = False
     else:
-        diarized = diarize_audio(audio_file)
+        speaker_count = 2
+        if args.guest:
+            guest_names = [
+                part.strip()
+                for part in re.split(r"[、,，]", args.guest)
+                if part.strip()
+            ]
+            if guest_names:
+                speaker_count = 1 + len(guest_names)
+        diarized = diarize_audio(audio_file, speaker_count=speaker_count)
         speaker_segments = assign_speakers_to_whisper_segments(segments, diarized)
         assign_host_guest_roles(speaker_segments)
         paragraphs = merge_by_speaker(speaker_segments)
