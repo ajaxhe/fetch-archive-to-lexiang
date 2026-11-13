@@ -1,0 +1,34 @@
+{
+  "title": "Knowledge graphs for AI: how they create context",
+  "source_url": "https://www.glean.com/blog/knowledge-graph-agentic-engine",
+  "source_title": "Knowledge graphs for AI: how they create context",
+  "source_type": "article",
+  "language": "non-zh",
+  "subtitle": "See how Glean works.",
+  "author": "Rob Stets\n\nSoftware Engineer",
+  "date": "Jun 27, 2025",
+  "content_length": 22805,
+  "image_count": 11,
+  "images": [
+    "images/img_04_2d770872.webp",
+    "images/img_05_8060710f.webp",
+    "images/img_06_a38a9ff8.webp",
+    "images/img_07_d4c933fa.webp",
+    "images/img_08_b71d4c53.webp",
+    "images/img_09_6e5b00f5.webp",
+    "images/img_10_06916cac.webp",
+    "images/img_11_d4efba60.webp",
+    "images/img_12_ede82f9a.webp",
+    "images/img_14_78d8eda3.png",
+    "images/img_15_1a9fe696.png"
+  ],
+  "fetched_at": "2026-11-13T17:18:35.164635",
+  "verification": {
+    "ok": true,
+    "source_sha256": "13cbae16e528febfaa0b138941709239fbad12bf83e83f0a933a32f702761bdd",
+    "markdown_image_references": 12,
+    "unique_local_images": 11,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}

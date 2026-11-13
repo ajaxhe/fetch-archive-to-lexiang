@@ -1,0 +1,25 @@
+{
+  "title": "Fine-Tuning Embedding Models for Enterprise RAG: Lessons from Glean",
+  "display_title": "Fine-Tuning Embedding Models for Enterprise RAG: Lessons from Glean / 面向企业 RAG 微调嵌入模型：来自 Glean 的经验",
+  "source_url": "https://jxnl.co/writing/2025/03/06/fine-tuning-embedding-models-for-enterprise-rag-lessons-from-glean/",
+  "source_anchor": "#security-and-privacy-considerations",
+  "source_title": "Fine-Tuning Embedding Models for Enterprise RAG: Lessons from Glean",
+  "source_type": "article",
+  "language": "en",
+  "author": "Jason Liu (jxnl.co)",
+  "talk_by": "Manav Rathod (Glean)",
+  "date": "2025-03-06",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d",
+  "verification": {
+    "ok": true,
+    "note": "抓取包清洗版：删抓取器生成的重复 H1（带 ' - Jason Liu' 后缀）/Python-list 形式的作者 '['jxnl']'/段首 ---（L024）/页尾 Comments+giscus；去掉 mkdocs 标题锚点符号 ¶ 共 35 处；原文 HTML 中 Conclusion 章节出现 2 次，属页面自身重复，只保留第一份；HTML 核实 <img>/<pre>/mermaid 均为 0，故无图片与代码块；作者按站点署名 Jason Liu，内容来源为 Manav Rathod 客座讲座；日期取 URL 路径 2025-03-06（页面无 author/datePublished meta）",
+    "image_references": [],
+    "graph_keyword_hits": {
+      "knowledge graph": 0,
+      "graph": 0,
+      "triplet": 0,
+      "provenance": 0,
+      "entity": 1
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "title": "Glean CEO on Training Data Podcast: The Future of AI at Work | Sequoia Capital",
+  "source_url": "https://sequoiacap.com/podcast/training-data-arvind-jain",
+  "source_title": "Glean CEO on Training Data Podcast: The Future of AI at Work | Sequoia Capital",
+  "source_type": "article",
+  "language": "non-zh",
+  "subtitle": "",
+  "author": "",
+  "date": "",
+  "content_length": 47369,
+  "image_count": 3,
+  "images": [
+    "images/img_01_cca8a6d4.png",
+    "images/img_02_cb40a213.jpg",
+    "images/img_03_8e3b0dc3.jpg"
+  ],
+  "fetched_at": "2026-11-13T10:16:10.158516",
+  "verification": {
+    "ok": true,
+    "source_sha256": "50e0c6433e24ea1b5c6c7fd60c96a461ae715fb15fdc25bfdd3e7fda2d1d0b34",
+    "markdown_image_references": 3,
+    "unique_local_images": 3,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}

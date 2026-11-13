@@ -1,0 +1,30 @@
+{
+  "title": "Knowledge graphs for AI: how they create context",
+  "display_title": "Knowledge graphs for AI: how they create context / 面向 AI 的知识图谱：它们如何构建上下文",
+  "source_url": "https://www.glean.com/blog/knowledge-graph-agentic-engine",
+  "source_title": "Knowledge graphs for AI: how they create context",
+  "source_type": "article",
+  "language": "en",
+  "authors": [
+    "Rob Stets (Software Engineer)",
+    "Pradeep Vaghela (Software Engineer)",
+    "Julie Mills (PMM)"
+  ],
+  "date": "2025-06-27",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d",
+  "verification": {
+    "ok": true,
+    "note": "抓取包清洗版：删 byline 拍平块/CTA/Share/Table of contents（残缺且含 #anchor）/页尾 2 张空标题；删段首 --- 分隔线（L024）；9 张正文图实际为 PNG 编码统一改 .png，剔除 2 张下载失败的 HTML 假 png 与 1 张 CTA AVIF 装饰图；三位作者取自 blog-single-hero_authors-group；日期取页面 Last updated + og:publish_date（JSON-LD 的 datePublished/dateModified=Sep 18 2026 与页面冲突、明显失真，未采用）",
+    "image_references": [
+      "images/img_04_2d770872.png",
+      "images/img_05_8060710f.png",
+      "images/img_06_a38a9ff8.png",
+      "images/img_07_d4c933fa.png",
+      "images/img_08_b71d4c53.png",
+      "images/img_09_6e5b00f5.png",
+      "images/img_10_06916cac.png",
+      "images/img_11_d4efba60.png",
+      "images/img_12_ede82f9a.png"
+    ]
+  }
+}

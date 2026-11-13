@@ -1,0 +1,22 @@
+{
+  "title": "Fine-Tuning Embedding Models for Enterprise RAG: Lessons from Glean - Jason Liu",
+  "source_url": "https://jxnl.co/writing/2025/03/06/fine-tuning-embedding-models-for-enterprise-rag-lessons-from-glean/",
+  "source_title": "Fine-Tuning Embedding Models for Enterprise RAG: Lessons from Glean - Jason Liu",
+  "source_type": "article",
+  "language": "non-zh",
+  "subtitle": "",
+  "author": "['jxnl']",
+  "date": "2025-03-06 00:00:00+00:00",
+  "content_length": 25968,
+  "image_count": 0,
+  "images": [],
+  "fetched_at": "2026-11-13T17:45:52.269519",
+  "verification": {
+    "ok": true,
+    "source_sha256": "f317b461b07c7fefc559c184a0255b2e17d76143887280b052bec84b4fb226e8",
+    "markdown_image_references": 0,
+    "unique_local_images": 0,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}
