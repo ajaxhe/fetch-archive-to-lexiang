@@ -82,6 +82,48 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("Today we discuss evals", merged[0]["text"])
         self.assertIn("narrow judges", merged[1]["text"])
 
+    def test_youtube_scales_funasr_ms_times_as_a_batch(self):
+        module = load_module("youtube_funasr_times", SCRIPTS / "yt_download_transcribe.py")
+        raw = [
+            {"start": 0, "end": 800, "spk": 0, "text": "Welcome."},
+            {"start": 5000, "end": 80000, "spk": 1, "text": "Long answer."},
+        ]
+        scaled = module.scale_funasr_sentence_times(raw)
+        self.assertEqual(
+            [(round(s["start"], 3), round(s["end"], 3), s["spk"]) for s in scaled],
+            [(0.0, 0.8, 0), (5.0, 80.0, 1)],
+        )
+
+        whisper_segments = [
+            {"start": 0.0, "end": 0.8, "text": "Welcome."},
+            {"start": 60.0, "end": 70.0, "text": "At our company we review traces."},
+        ]
+        assigned = module.assign_speakers_to_whisper_segments(
+            whisper_segments, scaled
+        )
+        self.assertEqual([item["spk"] for item in assigned], [0, 1])
+
+        poisoned = [
+            {"start": 0.0, "end": 800.0, "spk": 0, "text": "Welcome."},
+            {"start": 5.0, "end": 80.0, "spk": 1, "text": "Long answer."},
+        ]
+        misassigned = module.assign_speakers_to_whisper_segments(
+            whisper_segments, poisoned
+        )
+        self.assertEqual(misassigned[1]["spk"], 0)
+
+    def test_youtube_keeps_second_unit_funasr_times(self):
+        module = load_module("youtube_funasr_seconds", SCRIPTS / "yt_download_transcribe.py")
+        raw = [
+            {"start": 0.0, "end": 0.8, "spk": 0, "text": "Welcome."},
+            {"start": 5.0, "end": 80.0, "spk": 1, "text": "Long answer."},
+        ]
+        scaled = module.scale_funasr_sentence_times(raw)
+        self.assertEqual(
+            [(s["start"], s["end"], s["spk"]) for s in scaled],
+            [(0.0, 0.8, 0), (5.0, 80.0, 1)],
+        )
+
     def test_youtube_does_not_merge_different_guest_speakers(self):
         module = load_module("youtube_multi_guest_contract", SCRIPTS / "yt_download_transcribe.py")
         merged = module.merge_by_speaker([

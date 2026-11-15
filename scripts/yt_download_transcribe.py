@@ -218,6 +218,31 @@ def transcribe_audio(audio_path: str, model_name: str = "base") -> dict:
     return result
 
 
+def funasr_sentence_times_are_ms(sentences: list[dict]) -> bool:
+    """FunASR sentence_info 的 start/end 通常是毫秒。
+
+    不能按句判断 `> 1000`：`merge_vad=False` 时开场短句两端都可能 < 1000ms，
+    漏掉换算会变成几百秒，后续说话人重叠会被这段污染。
+    只要整批里有一个时间戳明显是毫秒，就全部按毫秒换算。
+    """
+    for sent in sentences:
+        if float(sent.get("start") or 0) > 1000 or float(sent.get("end") or 0) > 1000:
+            return True
+    return False
+
+
+def scale_funasr_sentence_times(sentences: list[dict]) -> list[dict]:
+    """把 sentence_info 的 start/end 统一成秒，整批同一套单位。"""
+    scale = 0.001 if funasr_sentence_times_are_ms(sentences) else 1.0
+    scaled = []
+    for sent in sentences:
+        item = dict(sent)
+        item["start"] = float(sent.get("start") or 0) * scale
+        item["end"] = float(sent.get("end") or 0) * scale
+        scaled.append(item)
+    return scaled
+
+
 def diarize_audio(audio_path: str, speaker_count: int | None = None) -> list[dict]:
     """用 SenseVoiceSmall + CAM++ 获取多语言说话人时间区间。"""
     from funasr import AutoModel
@@ -246,23 +271,24 @@ def diarize_audio(audio_path: str, speaker_count: int | None = None) -> list[dic
     if speaker_count and speaker_count > 1:
         generate_kwargs["preset_spk_num"] = int(speaker_count)
     result = model.generate(**generate_kwargs)
-    sentences: list[dict] = []
+    raw_sentences: list[dict] = []
     for item in result:
         for sent in item.get("sentence_info") or []:
-            start = float(sent.get("start") or 0)
-            end = float(sent.get("end") or 0)
-            if start > 1000 or end > 1000:
-                start, end = start / 1000.0, end / 1000.0
             text = rich_transcription_postprocess(
                 (sent.get("text") or sent.get("sentence") or "").strip()
             )
-            if text and end >= start:
-                sentences.append({
-                    "start": start,
-                    "end": end,
-                    "text": text,
-                    "spk": int(sent.get("spk", 0)),
-                })
+            if not text:
+                continue
+            raw_sentences.append({
+                "start": float(sent.get("start") or 0),
+                "end": float(sent.get("end") or 0),
+                "text": text,
+                "spk": int(sent.get("spk") or 0),
+            })
+    sentences = [
+        sent for sent in scale_funasr_sentence_times(raw_sentences)
+        if sent["end"] >= sent["start"]
+    ]
     if not sentences:
         raise RuntimeError(
             "CAM++ 未返回 sentence_info；请升级 funasr>=1.3.2，"
