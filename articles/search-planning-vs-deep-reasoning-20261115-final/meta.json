@@ -1,0 +1,27 @@
+{
+  "title": "Exploring Glean's approach: search planning vs. deep reasoning in AI",
+  "source_url": "https://www.glean.com/perspectives/exploring-gleans-approach-search-planning-vs-deep-reasoning-in-ai",
+  "source_title": "Exploring Glean's approach: search planning vs. deep reasoning in AI",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "",
+  "author": "The Glean Team",
+  "date": "Jun 04, 2026",
+  "content_length": 22974,
+  "image_count": 2,
+  "images": [
+    "images/img_01_18d5ccbc.webp",
+    "images/img_08_6e7e3ea5.webp"
+  ],
+  "fetched_at": "2026-11-15T09:14:17.358556",
+  "verification": {
+    "ok": true,
+    "note": "抓取包清洗版（glean.com/perspectives 模板，与 /blog/ 不同）：抓取器产出 2 个 H1 —— 首行是缺撇号的 SEO title「Exploring Gleans approach...」，第 20 行才是正文 H1「Exploring Glean's approach: ...」；清洗版只保留正文 H1 作 meta.title/文件名/展示名。删除站点副标题 See how Glean works、11minutes read、残缺且含 #anchor 与 CTA 的 Table of contents、段首 ---（L024）；页尾 Back to Perspectives home / ## Recent posts 六张推荐卡（含多次 No items found）/ ## Work AI that works / Get a demo / Request a demo 全部删除。8 张下载图中 6 张转换失败未落盘；落盘 2 张均为 PNG 编码的 .webp，hero（img_01，1201x630）保留并改 .png，CTA BG（img_08，2336x862）删除。正文 3 列 5 行表格按 English<br>中文 逐单元格双语（列数 ≤10）；FAQ 5 问标题保留。正文链接均为绝对地址，相对链接只出现在已删除的页尾噪音中。原文用 approximately/roughly 表述数值，无裸 ~ 近似符号。作者 The Glean Team 取 meta author，日期 Jun 04, 2026 取 Last updated + og:publish_date。",
+    "image_references": [
+      "images/img_01_18d5ccbc.png"
+    ],
+    "platform_noise_hits": []
+  },
+  "display_title": "Exploring Glean's approach: search planning vs. deep reasoning in AI / 探索 Glean 的路径：AI 中的搜索规划与深度推理",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d"
+}

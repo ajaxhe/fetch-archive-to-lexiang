@@ -1,0 +1,26 @@
+{
+  "title": "Crawling and learning process",
+  "source_url": "https://docs.glean.com/get-started/review/crawling-and-learning",
+  "source_title": "Crawling and learning process",
+  "source_type": "article",
+  "language": "non-zh",
+  "subtitle": "",
+  "author": "",
+  "date": "2026-11-04T22:03:07.000Z",
+  "content_length": 11139,
+  "image_count": 3,
+  "images": [
+    "images/img_01_b62b1832.webp",
+    "images/img_02_feb6aa65.webp",
+    "images/img_03_72e5d9be.webp"
+  ],
+  "fetched_at": "2026-11-14T23:04:38.572017",
+  "verification": {
+    "ok": true,
+    "source_sha256": "7415376441797eff25cd2d3d31c20f06d3d7699bad369931c3de8be7773ac814",
+    "markdown_image_references": 3,
+    "unique_local_images": 3,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}

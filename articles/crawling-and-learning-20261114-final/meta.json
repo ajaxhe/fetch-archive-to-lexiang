@@ -1,0 +1,29 @@
+{
+  "title": "Crawling and learning process",
+  "source_url": "https://docs.glean.com/get-started/review/crawling-and-learning",
+  "source_title": "Crawling and learning process",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "",
+  "author": "",
+  "date": "2026-11-04",
+  "content_length": 11139,
+  "image_count": 3,
+  "images": [
+    "images/img_01_b62b1832.webp",
+    "images/img_02_feb6aa65.webp",
+    "images/img_03_72e5d9be.webp"
+  ],
+  "fetched_at": "2026-11-14T23:04:38.572017",
+  "verification": {
+    "ok": true,
+    "note": "抓取包清洗版：删除 1 张站点装饰 banner（img_01 渐变横幅，非正文图）与 2 行重复图注；2 张正文图实为 PNG 编码，统一改 .png；恢复 Mintlify 折叠 FAQ 的 9 个问题标题（原抓取被拍平）；note/warning 粘连标签还原为 [!note] callout；清除页脚版权、Was this helpful、On this page 目录与所有 --- 分隔线（L024）；标题零宽字符清理；正文相对链接补全为 docs.glean.com 绝对地址；页脚噪音已核对为零。",
+    "image_references": [
+      "images/img_02_feb6aa65.png",
+      "images/img_03_72e5d9be.png"
+    ],
+    "platform_noise_hits": []
+  },
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d",
+  "display_title": "Crawling and learning process / 抓取与学习流程"
+}

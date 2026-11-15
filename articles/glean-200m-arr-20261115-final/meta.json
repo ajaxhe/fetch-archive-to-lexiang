@@ -1,0 +1,26 @@
+{
+  "title": "Glean Surpasses $200M in ARR for Enterprise AI, Doubling Revenue in Nine Months",
+  "source_url": "https://www.glean.com/press/glean-surpasses-200m-in-arr-for-enterprise-ai-doubling-revenue-in-nine-months",
+  "source_title": "Glean Surpasses $200M in ARR for Enterprise AI, Doubling Revenue in Nine Months",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "",
+  "author": "",
+  "date": "Dec 08, 2025",
+  "content_length": 6109,
+  "image_count": 1,
+  "images": [
+    "images/img_02_cd203f1f.png"
+  ],
+  "fetched_at": "2026-11-15T18:24:03.910811",
+  "verification": {
+    "ok": true,
+    "note": "抓取包清洗版（www.glean.com/press，新闻稿模板，首次遇到，与 /blog/ 和 /perspectives/ 都不同）。标题：抓取稿有 2 个 H1 —— 首行是 <title> 带站点后缀「 | Glean Press」，第 12 行才是正文 H1；按 L058/L060 去掉站点后缀，只保留正文 H1 作 meta.title / source_title / 文件名 / display_title（79 字符，加中文译名共 107 字符，未超 150，无需缩短）。作者：新闻稿无 byline、页面无 <meta name=\"author\">，author 留空不编造；日期取页面 Published Dec 08, 2025 与 dateline December 8, 2025 - Palo Alto, CA。模板特征（curl 原始 HTML 589196 字节）：无 Get The Resource / Listen to article / Recent posts / Table of contents / Work AI for all，但站点导航副标题 See how Glean works ×2、抓取器元信息行、段首 --- 需删除；正文含加粗伪标题、三组 bullet、CEO 引语、Learn More / About Glean / Connect with Us! / Contact 新闻稿固定尾部。删除：带后缀的 SEO H1、See how Glean works、抓取器日期/原文链接行、段首 ---（L024）、圆形 Glean 品牌 logo（img_01，378×372，alt=Glean Icon - Circular - White，纯品牌装饰）及其下方单独一行 Glean 文字、零宽字符 \\u200d。保留 img_02（2638×1482，实为 PNG 编码的 .webp）：目视确认是 Years from 1 to 200M ARR / Leading Enterprise Software Companies 曲线对比图，含数据，属正文图，改 .png 并简化 alt。8 处 CMS 粗体尾随空格（dateline、5 个 bullet 标签、Connect with Us!）按 L070 用精确字符串替换修正，修复后 ::** 计数 0；跨行粗体 **About Glean\\n\\u200d**... / **Contact\\n\\u200d**... 拆成独立 ## 标题 + 正文段；加粗伪标题按文档逻辑（L011）提升为 ## （共 8 个）；Connect with Us! 行三个粘连链接（含 U+00A0 不换行空格）拆开加空格。正文无表格、无裸 ~ 近似值、正文链接均为绝对地址。",
+    "image_references": [
+      "images/img_02_cd203f1f.png"
+    ],
+    "platform_noise_hits": []
+  },
+  "display_title": "Glean Surpasses $200M in ARR for Enterprise AI, Doubling Revenue in Nine Months / Glean ARR 突破 2 亿美元，9 个月翻番",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d"
+}

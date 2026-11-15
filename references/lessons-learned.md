@@ -1110,6 +1110,7 @@
 | 2026-11-13 | sequoiacap.com/podcast/* 播客页转存：页面自带官方完整 transcript、Summary、10 条 Chapters 与 Megaphone 音频 iframe，但通用抓取器把 `<title>` 的 SEO 后缀 `\| Sequoia Capital`、面包屑、Stream now、MORE EPISODES 推荐卡和 2 张推荐图混进正文，`verification.ok` 仍为 true；页面无可靠 `datePublished`/`duration`；Chapters 用 `#header-N` 页内锚点 | 有官方逐字稿时**不要下载音频跑 ASR**，直接走网页文本链路，媒体音频按用户是否要求另行归档；标题取页面 H1 而非 `<title>`，清洗后另建 `-final` 工作目录当不可变 source.md，只留 1 张主图硬链接；`#header-N` 与 L064 的 `#h-...` 同属页内锚点坑，**清洗阶段就改成完整 https URL**，否则 uploader 长段落锚点误报；无发布日期就写 `date: null` 并在 verification.note 注明不编造；双语按 block 逐块译，目录列表写成 `- [X](url) / 中文`、章节标题 `#### X / 中文`；线上 208 块（p182 / bulleted_list10 / h4 10 / h2 2 / quote3 / image1），`verified=true`、无字面量 `##` 段落（L065，🟢 P2） | lessons-learned.md |
 | 2026-11-13 | glean.com/blog/* 转存：抓取包把三位作者的 byline 拍平成 4 个残块、`---` 分隔线落在段首（L024）、`Table of contents` 目录挤成一行且末尾截断并含 `#anchor`、页尾混入 2 个空 `##` 标题 + CTA 文案；`verification.ok` 仍为 true。更隐蔽的是图片：抓取器把 webp 转 PNG 后**仍保留 `.webp` 后缀**，2 张下载失败的 CTA 图其实是以 `.png` 命名的 HTML 文档（`<!DOCTYPE` 头），1 张 CTA 装饰图是 AVIF。日期上 JSON-LD `datePublished/dateModified=Sep 18 2026` 与页面 `Last updated Jun 27, 2025` + `og:publish_date` 冲突，前者是站点模板注入的失真值 | 清洗另建 `-final` 工作目录；删 byline/CTA/Share/残缺 TOC/页尾空标题/段首 `---`；**必须用 PIL 逐张核对真实 format 并统一改成与内容一致的扩展名**，剔除打不开的假 png 与装饰图（本次 15 张下载 → 9 张正文图）；作者取 `blog-single-hero_authors-group-wrap` 的三人；日期取页面可见值 + og:publish_date，冲突时以页面为准并在 verification.note 说明；用户要求把阅读洞察写成顶部导读时，用 `## Key Takeaways / 核心洞察` + 4 个 `### English / 中文` 小标题 + 中文段落，用 `>` 明确标注非原文，**导读只进最终双语稿不进不可变 source.md**，generic 校验仍通过；线上 143 块（p107/h2 8/h3 8/image 9/quote 3/numbered_list 8），8/8 有序列表项双语（L066，🟢 P2） | lessons-learned.md |
 | 2026-11-13 | jxnl.co（mkdocs material 博客）转存：抓取包标题带 ` - Jason Liu` 后缀、35 个标题末尾带锚点符号 `¶`、作者被解析成 Python 字符串 `['jxnl']`、段首 `---`、页尾 Comments+giscus；原文页面自身把 Conclusion 章节与三段结论**写了两遍**（curl 核实 `>Conclusion<` 出现 2 次，非抓取器重复）；页面 `<img>/<pre>/mermaid` 全为 0。最隐蔽的是抓取器把「标题 + 正文」「标题 + 24 行列表」用**单换行挤进同一 block**，直接双语化会让标题变成字面量 `##` 段落。另：宿主连接器 `mcp__lexiang__call_tool` 报 `{"error":"unauthorized"}` 时目录/块结构对账做不了 | 清洗另建 `-final` 包：删抓取器头部重复 H1、段首 `---`、页尾 Comments，去 `¶`，重复 Conclusion 只留第一份；**必须做行级规范化重分块**（标题行独立成块、连续列表行合并、引用行合并），否则 139 块里有 33 个复合块会渲染失败；无图时先用 curl 核实 HTML 确实无 img/pre/mermaid 再确认 `image_count=0`，不要按 L001 硬凑。宿主连接器 unauthorized 时先查 `auth status --profile csig --check`：个人凭证往往仍有效，upload 照常；目录与块结构对账改用 `import lexiang_upload as lu` → `PersonalCredential.from_dict(csig.json)` → `lu.MCPClient(cred).json('entry_list_children'/'block_list_block_children', ...)` 直连个人凭证完成，无需 reconnect（L064 的宿主连接器兜底是反方向，别混用）。用户给的是**问句式洞察**时用 `## Reading Notes / 阅读笔记与延伸追问`，逐条标注「原文事实 / 外部来源 / 推断」并给外部链接，不把推断伪装成原文结论；线上 331 块（p175/bulleted_list48/numbered_list41/quote31/h3 18/h2 11/h4 7），无字面量 `##`（L067，🟢 P2） | lessons-learned.md |
+| 2026-11-14 | docs.glean.com/administration/search/about 转存：第 3 张截图下载超时→触发「仍含远程图片 URL」硬守卫（L053）；curl 两次均截断，`LOAD_TRUNCATED_IMAGES` 恢复带黑条不可用；3 张 `.webp` 名实为 PNG 编码；info callout 被拍平成 `infoGlean`、Search Tips 下 3 个 h3 丢失、标题零宽空格与页脚 `#anchor` 目录；含大量中文的 Python heredoc 报 `SyntaxError: Non-UTF-8 code starting with '\xe3'`；`Salesforce / Salesforce` 这类纯专名列表项过不了双语配对校验 | 用 `_debug_remote_image.md` 重建清洗包；大图改用 Playwright `APIRequestContext.get(timeout=180000)` 重下完整 PNG + `Image.load()` 校验；中文内容外置为 UTF-8 文件、装配脚本保持纯 ASCII 并用 `PYTHONUTF8=1 /usr/bin/python3 -X utf8 script.py`；专名补中文义项（`- Salesforce / 客户关系管理系统（Salesforce）`）；导读用普通段落，不用列表/表格；目录查重必须按 `next_page_token` 分页（实际 7 条，非上下文记忆的 4 条）；线上 131 块（p54/bulleted_list44/h3 17/quote7/h2 5/image4），`verified=true`（L068，🟢 P2） | lessons-learned.md |
 
 ---
 
@@ -1126,3 +1127,121 @@ Agent 在以下时机**必须**更新此文件：
 - 每条 Lesson 必须包含：问题描述、根因分析、正确做法
 - 按严重性分级：🔴 P0（反复犯的）、🟡 P1（偶尔犯的）、🟢 P2（已修复的）
 - P0 教训对应的自检项必须同步更新到 SKILL.md 的自检清单中
+
+---
+
+## 追加教训（2026-11-14，docs.glean.com 归档实战）
+
+#### L064：本机默认 `python3` 无 Playwright；`start-cdp-chrome.sh` 的 `open -na` 在本会话沙箱下启动超时（🟡 P1）
+
+- **症状**：`python3 fetch_article.py ... --cdp` 直接 `ModuleNotFoundError: No module named 'playwright'`；先跑 `~/.fetch_article/start-cdp-chrome.sh` 则 15 秒后报「Chrome 启动超时」，9222 无响应。
+- **根因**：默认解释器是 `/Users/ajaxhe/.workbuddy/binaries/python/versions/3.13.12/bin/python3`（无 playwright）；`/usr/bin/python3`（3.9.6）与 `/opt/homebrew/bin/python3` 才有 playwright + requests/bs4/html2text；`open -na "Google Chrome"` 在沙箱里起不来 GUI 实例。
+- **正确做法（写死，勿改）**：网页抓取固定用 `/usr/bin/python3`；用**非沙箱**执行，且把「启动真 Chrome + 轮询端口 + 抓取 + kill + 清理 profile」写进**同一条 Bash 命令**（跨调用后台进程会被回收）：
+
+  ```bash
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+    --remote-debugging-port=9222 --user-data-dir=/tmp/cdp_profile_glean_20261114 \
+    --no-first-run --no-default-browser-check --headless=new --disable-gpu \
+    --disable-extensions --no-sandbox --in-process-gpu --disable-dev-shm-usage \
+    --disable-software-rasterizer >/tmp/cdp_chrome_glean.log 2>&1 & CHROME_PID=$!
+  # 轮询 http://127.0.0.1:9222/json/version 就绪 → 抓取 → kill $CHROME_PID → rm -rf profile
+  ```
+
+  参数必须含 `--no-sandbox --in-process-gpu`（L051）；公开页无需登录态，不用复制日常 Chrome profile。抓取日志出现「已连接到 CDP Chrome」即合规，出现 `Google Chrome for Testing` 判失败。networkidle 60s 超时但正文已渲染时脚本会继续，需以 `source.md` 实际内容为准。
+- **停止条件**：CDP 端口 25 秒内未就绪 → 打印 Chrome 日志并停，不要回退 `--no-cdp`。
+
+#### L065：Mintlify 文档站（docs.glean.com）抓取稿必须做 6 项清洗（🟡 P1，新平台规律）
+
+- **症状**：抓取器 `verification.ok=true` 但 `source.md` 有 `noteUse these times...` / `warningUsage of Glean...` 标签粘连、FAQ 只剩答案没有 9 个问题标题、页尾混入 `© 2026 ... Was this page helpful? On this page`、标题带零宽字符 `\u200b`、正文链接是 `/...` 相对路径。
+- **正确做法（按固定顺序做清洗版工作包，不改原 `source.md`）**：
+  1. 折叠 FAQ 的问题标题在 DOM 里是按钮文本，抓取器会拍平；用 `curl -sL <URL>` 的原始 HTML 按问题关键词定位并恢复为 `####` 标题（本次 9 个），再用答案顺序对齐。禁止只留答案。
+  2. `note` / `warning` 粘连标签还原为 `> [!note] Note / 注`、`> [!note] Warning / 警告` callout（uploader 只支持 stat/definition/note 三种），英文行与中文行分开写，避免 CJK 行内出现 `*`。
+  3. 删除所有 `---` 分隔线（L024）、页脚版权 / Was this helpful / On this page 目录、重复图注、标题零宽字符。
+  4. 装饰 banner（alt=`banner` 的渐变横幅）删掉；正文截图保留。用 `file` 检查真实编码：`.webp` 名但内容是 PNG 时统一改 `.png` 并同步 `meta.json.verification.image_references`。
+  5. 正文相对链接补全为 `https://docs.glean.com/...` 绝对地址，链接留在原句内（L057）。
+  6. 清洗版写入**新工作目录** `<slug>-YYYYMMDD-final`，`meta.json.verification.note` 逐条记录清洗动作；随后跑 `bilingual_validate.py --profile generic --json` 必须 `ok=true`。
+- **自检项**：FAQ 标题数本地与线上相等；图片引用数三方相等（source / 最终稿 / 线上）；页脚噪音 grep 为 0；所有列表项含 ` / ` 与中文。
+
+#### L066：用户随链接给出「核心洞察」时的固定编排（🟢 P2，惯例非错误）
+
+用户给归档链接并附「核心洞察：1）…2）…3）…」时，把 3 点写成最终稿**顶部** `## Key Takeaways / 核心洞察`，下加 `> 阅读笔记（凡哥）：以下 N 点为归档时补充的解读与引申，非原文内容；原文全文与逐段中英对照见下文。`，每点一个 `### 序号. English / 中文` 小节；严格区分「文档原文明确写出」与「笔记作者的引申」。正文仍保留逐段中英对照，禁止用洞察替代原文。可参照 `articles/knowledge-graph-agentic-engine-20261113-final/` 的成稿格式。洞察点数不固定，本次 `hybrid-vs-rag-vector` 只有 1 点，照写 1 个小节即可，不要凑数。
+
+#### L067：glean.com/blog（Webflow）抓取稿的 6 个固定坑（🟡 P1，2026-11-14 复测）
+
+- **背景**：`https://www.glean.com/blog/hybrid-vs-rag-vector` 下载 12 张图，只有 8 张是真正文图；`verification.ok=true` 但正文混入导航、CTA 与 CMS 重复段。历史 `knowledge-graph-agentic-engine-20261113-final` 的 meta note 已有同类记录，本条固化为可执行清单。
+- **固定清单（按顺序做，写进 `-final` 清洗版工作包）**：
+  1. **HTML 假 png**：抓下来的 `.png` 前 8 字节是 `<!DOCTYPE ht`、字节数与 `curl -sL <URL>` 的 HTML 完全一致 ⇒ 不是图片，删（本次 img_10/img_11 均 618595 字节）。判据用 `file` / 文件头，不要看扩展名。
+  2. **CTA 装饰图**：alt=`CTA Section Background Shape` 的 AVIF/大图删；alt=`Product Illustration` 的正文示意图保留，并逐张读图确认（本次 8 张全为 embedding 映射、RAG 流程、知识图谱信号、Scholastic 对比、微调打分、deprecated 结果等真实配图）。
+  3. PNG 编码却叫 `.webp` 的正文图统一改 `.png`，同步 `meta.json.verification.image_references`。
+  4. **SEO title ≠ 正文 H1**：`og:title`/`<title>` 是 `Hybrid Search vs. RAG and Vector Search: Key Differences`，正文 H1 是 `What sets great retrieval augmented generation apart — ...`；`meta.title` / 文件名 / `display_title` 一律用 H1。作者取 `<meta name="author">`，日期取页面 `Last updated` + `og:publish_date`（本次均为 May 15, 2024），不要采信 JSON-LD 里明显失真的 datePublished。
+  5. 删除站点导航副标题（如 `See how Glean works.`）、`5minutes read` 拍平 byline、残缺且含 `#anchor` 的 `Table of contents`、段首 `---`（L024）、页尾 `Back to all stories` / `Get The Resource` ×2 / 两个空 `##` / `Work AI for all` / `Get a Demo`；正文相对链接补 `https://www.glean.com` 前缀（L057）。
+  6. **粗体尾随空格**：`**Scholastic **serves` 必须修成 `**Scholastic** serves`，否则乐享会把粗体序列化成非法星号。
+- **页面自身重复段落的处理**：用 `curl -sL` 的原始 HTML 去标签后按句计数，确认是 CMS 真写了两遍（本次 Scholastic 引导段两组措辞略异，HTML 中各 1 次）⇒ **两份都保留**，不得擅自删成一份；若两组之后只有一份带完整 Q/A 示例，更要以不丢原文为准。写入 `meta.json.verification.note` 说明。
+- **斜体图注**：`*Embedding models map text to a fixed vector of numbers*` 这类图注与通用 alt `Product Illustration` 不重复、有信息量，**保留并翻译**（区别于 Mintlify 的重复图注，L065 是要删的）。
+- **自检项**：`local_images == remote_images == 8`；线上 image block 均有 `file_id`；`bilingual_validate.py --profile generic` ok=true；目录只新增 1 条且置顶。
+
+#### L068：超长 H1 与近似值 `~` 两个首次触发的硬校验（🟡 P1，2026-11-15，`waldo-launch`）
+
+- **超长 H1（L035 首次实战）**：`Glean Waldo: An agentic search model that pairs with LLMs to deliver frontier intelligence with ~50% lower latency and ~25% fewer tokens` 共 **136 字符**，加中文译名必然超过乐享 150 字符上限。正确做法：`meta.title` / `meta.source_title` / 最终 Markdown **文件名保留完整原题**，只把 `meta.display_title` 与 uploader `--name` 缩短为 `Glean Waldo: An agentic search model with ~50% lower latency / Glean Waldo：延迟降低约 50% 的智能体搜索模型`（93 字符）。文件名含 `:` 与 `~` 在 macOS APFS 上可直接创建，不必替换；不要为了短把正文 H1 也改掉。
+- **近似值 `~`**：`bilingual_validate.py` 的 `validate_no_unsafe_tildes` 会拒绝 `~50%` / `~250 ms` / `~3s`（近似 tilde 后跟数字，且同一行两个 `~` 还会被判成删除线）。正确做法：`source.md` **保留原文 `~`**，`<原文标题>.md` 双语稿里统一改成 `≈`（`≈50%`、`≈250 ms`、`≈3s`），中文译文也用「≈」或「约」。因为 `_normalize` 的 TOKEN_RE 会忽略 `~`/`≈` 这类符号，源文段落对账不受影响；改完再跑 `generic --json` 必须 `ok=true`。禁止为过校验而删掉数字或改写成文字。
+- **Glean 博客新增噪音（补 L067）**：① `Listen to article` 音频播放器 UI 会成对混入正文与 TOC 前后，整块删；② byline 可能有 **4 位作者**（本次 Eddie Zhou / Kunal Patil / Abhilash Samantapudi / Julie Mills），`<meta name="author">` 只给第一位，必须取 byline 全量；③ 图表 `alt` 与其下方斜体图注**逐字重复**且很长 —— 清洗版简化 alt（如 `![Waldo reward curve]`），保留斜体图注英文原文并翻译，信息不丢且避免线上长句重复；④ `Availability: ... will be deployed to customers soon.` 属正文末句，必须保留（常用于校准用户对发布时间的判断）。
+- **自检项**：`display_title` 长度 ≤150 且 `meta.title` 等于页面 H1；最终稿 grep 无 `~` + 数字；线上 image block 数与本地一致。
+
+#### L068：docs.glean.com `About Glean Search` 归档实战——大图截断 / 中文 heredoc 编码 / 专名双语配对（🟢 P2）
+
+> 编号说明：本条接**规则演化表**的 L067（2026-11-13 jxnl.co）。上方「追加教训（2026-11-14）」段内的 L064/L065/L066 是另一篇 docs.glean.com 页面留下的重号条目，内容不同，勿混用；新条目一律从 L068 往后排。
+
+- **症状 1（图片）**：`fetch_article.py --no-cdp` 抓到 `3238` 字符正文，4 张截图只下成 3 张，第 3 张超时 → 触发「Markdown 仍含远程图片 URL」硬守卫（L053），脚本失败但落盘 `_debug_remote_image.md`。对缺图用 `curl` 下载两次都 `OSError: image file is truncated`；用 `ImageFile.LOAD_TRUNCATED_IMAGES=True` 能恢复，但拼图里底部有明显黑条，不可用。
+- **正确做法 1**：以 `_debug_remote_image.md` 为内容基础重建清洗包；大图用 Playwright `APIRequestContext.get(url, timeout=180000)` 重下（本次 status 200 / 1478132 字节 / `COMPLETE PNG (3232, 1724)`），并**逐张** `Image.open(p).load()` 校验，再生成拼图用 `ViewImage` 目视确认无黑条/灰条/截断。`.webp` 后缀但 `im.format == 'PNG'` 的 3 张统一改名 `.png`，最终包内用**硬链接**（不是软链接，否则 uploader 判「图片路径越出 Markdown 目录」）。
+- **症状 2（Mintlify/Docusaurus 结构）**：`info` callout 被拍平成 `infoGlean ...`；`Search Tips` 下的 `Basic Search` / `Exact Matches` / `People Search` 三个 h3 被抓取器整体丢失；标题残留零宽空格 `\u200b`；页尾混入 `© 2026 Glean Technologies`、`Was this page helpful?`、`On this page` 的 `#anchor` 目录。
+- **正确做法 2**：`curl -sL` 原始 HTML 核实 h3 与 `<time itemprop=dateModified datetime="2026-09-29">`；callout 还原为 `> Glean ...` 引用块并去掉 `info` 标签；补回 3 个 h3；删零宽空格与页脚；日期取 footer 的 `dateModified`，页面无作者字段就**不编造**。清洗版另建 `-final` 工作目录，逐条写进 `meta.json.verification.note`。
+- **症状 3（编码，新坑）**：把含大量中文的装配脚本用 `/usr/bin/python3 - <<'PY' ... PY` 从 stdin 送入，报 `SyntaxError: Non-UTF-8 code starting with '\xe3' in file <stdin> on line 10, but no encoding declared`；此前同类 heredoc 能跑，属不稳定行为，不要依赖。
+- **正确做法 3（写死）**：**中文内容一律外置**——导读写 `/tmp/<slug>_intro.md`、译文写 `/tmp/<slug>_zh.json`，装配脚本本身保持**纯 ASCII**，只负责读 UTF-8 文件并拼装；执行用 `PYTHONUTF8=1 /usr/bin/python3 -X utf8 /tmp/build_<slug>.py`。这样与 locale、stdin 编码完全解耦。
+- **症状 4（校验器，新坑）**：`validate_bilingual_list_items_paired` 要求每个列表项**同时含 Latin 与 CJK** 且含 ` / `，所以 `- Salesforce / Salesforce`、`- Zendesk / Zendesk`、`- Jira / Jira` 会 fail；`validate_bilingual_table_cells_paired` 同理会拒「含 Latin 但无 CJK」的单元格。
+- **正确做法 4**：专有名词补中文义项，如 `- Salesforce / 客户关系管理系统（Salesforce）`；**导读正文不用 Markdown 列表和表格**，改用 `**原文事实** / **截图可见** / **归档者推断**` 开头的普通段落（此前 Glean 博客导读即此写法，generic 校验可过）。双语标题仍用 `### English / 中文`。
+- **导读编排**：用户给的两条是**陈述式洞察**（截图展示能力的边界、索引用到的文档属性）→ 用 `## Reading Notes / 阅读笔记` + 2 个 `### English / 中文` 小节；逐张核对截图后如实指出**图 1 图注写「知识图谱可视化」但画面其实是一张普通搜索结果卡片**，明确正文「构建知识图谱」只是引用式陈述、截图未提供可视化证据；第 2 节把文档属性拆成「内容本体 / 自定义元数据 / 来源与归属 / 组织与权限信号」四类，并区分哪些被原文明确说成「建索引可检索」、哪些只是排序/个性化信号。
+- **目录查重必须分页**：`entry_list_children` 要按 `next_page_token` 循环，本次目录实际 **7 条**（含他人新增的 3 条），不能凭上下文记忆里的「4 条」判断；上传后 7→8，新页 `sort_id` 最小、置顶、`status=finished`。
+- **线上对账结果**：`verified=true` / `remote_images=4`；`block_list_block_children(with_descendants=True)` 返回**扁平** `data.blocks`（不要再递归 `children`，其中可能是字符串 ID），131 块 = `p54 / bulleted_list44 / h3 17 / quote7 / h2 5 / image4`，字面量 `##` 段落 0，导读与「自定义元数据」中文字段均在线上可检出。
+
+#### L069：`/perspectives/` 新模板 + 「中英混排污染」伪装成「源文段落缺失」（🟡 P1，2026-11-15，`search-planning-vs-deep-reasoning`）
+
+> 编号说明：接 L068。本文件已有两条 L068 重号（`waldo-launch` 硬校验、`About Glean Search` 实战），新条目一律从 **L069** 往后排。
+
+- **最阴的校验失败（先查这里）**：`bilingual_validate.py --profile generic --json` 报 `双语文档疑似缺少 1 个源文段落：a narrower model is easier to govern a purpose trained search planning model has`，但双语稿里**那一英文行明明存在**。根因是英文源段被写成 `... and adjust its行为 without touching ...` —— 中文词直接嵌进英文源段，把 `behavior` 替换掉了。`validate_bilingual_source` 用 `_normalize`（TOKEN_RE 只收 `[a-z]+`）归一化后做「整串包含 / `_tokens_in_order` / `SequenceMatcher >= 0.92`」三重比对，token 序列在 `its` 处断掉，三种全失败 → 被误判为「段落缺失」。**修复**：英文源段必须逐字保留，**一个 CJK 字符都不能混进去**；`its行为` 改回 `its behavior` 即 `ok=true`。排查命令：扫 `[A-Za-z][\u3400-\u9fff]|[\u3400-\u9fff][A-Za-z]` 相邻处，正常中文译文行、双语标题、`English<br>中文` 表格单元格不会命中「拉丁字母紧邻 CJK」。
+- **dry-run 不是完整性校验**：同一份稿 `lexiang_upload.py --dry-run --json` 返回 `ok=true` / `verified=false`，而 `bilingual_validate.py` 返回 `ok=false`。dry-run 只做上传预检（分段 / 图片 / 标题统计），**不检查源文段落与中文覆盖**。两道都要跑，且以 `bilingual_validate.py` 为上传闸门；禁止只看 dry-run 就上传。
+- **简易自检的 `noise: ['---']` 误报**：`if '---' in md` 会把表格分隔行 `| --- | --- | --- |` 当成平台噪音。改成只判「整行 strip 后等于 `---`」。本次该行确认为表格分隔线，非噪音，无需改动正文。
+- **`/perspectives/` 模板 ≠ `/blog/` 模板（新平台规律）**：
+  1. 抓取稿有 **2 个 H1**：首行是**缺撇号的 SEO title**（`Exploring Gleans approach search planning vs deep reasoning in AI`），约第 20 行才是正文 H1（`Exploring Glean's approach: ...`）。只保留正文 H1 作 `meta.title` / 文件名 / `display_title`；`og:title` 与 `<title>` 都是 SEO 版，不采信。
+  2. 页尾噪音：`Back to Perspectives home` → `## Recent posts` 六张推荐卡（卡内多次 `No items found.`）→ `## Work AI that works.` → `Get a demo` / `Request a demo`；另有残缺且含 `#anchor` 的 `Table of contents`、`See how Glean works`、`11minutes read`。全部删除。
+  3. 8 张下载图仅 2 张落盘（6 张转换失败），且均为 **PNG 编码的 `.webp`**：hero（1201×630）保留并改 `.png`，`CTA BG`（2336×862）是装饰图删除；同步 `meta.json.verification.image_references` 与正文引用。
+  4. 正文含 **3 列 5 行表格 + 5 个 FAQ**：表格按 `English<br>中文` 逐单元格双语（列数 ≤10），FAQ 问题标题保留为 `### English / 中文`。
+  5. 作者取 `<meta name="author">`（本次 `The Glean Team`），日期取 `Last updated` + `og:publish_date`（`Jun 04, 2026`）；原文用 `approximately` / `roughly` 表述数值，**无裸 `~`**，不要照搬 L068 的 `≈` 改写。
+- **自检项**：`bilingual_validate.py` ok=true → dry-run ok=true → 上传 `verified=true` / `local_images == remote_images == 1` / `local_callouts == remote_callouts == 0`；目录 10→11 条且新页 `sort_id` 最小（置顶）；`block_list_block_children` 中 image block 有 `file_id`、table `row_size=6 / column_size=3`、21 个标题、顶部 4 节洞察齐全。
+
+#### L070：Glean `/blog/` 第三次复现——HTML 假 png 三联、作者三处不一致、粗体修复的二次踩坑（🟡 P1，2026-11-15，`live-fall-25-agentic-engine2-performance`）
+
+> 编号说明：接 L069。与 L067/L068 同属 `www.glean.com/blog` Webflow 模板，本条是第三次实战复现后的补充，不另起平台章节。
+
+- **HTML 假 png 的强特征（比 L067 更快判定）**：本次 `img_05` / `img_14` / `img_15` 都是 **624236 字节**，恰好等于 `curl -sL` 保存的原始 HTML 字节数，文件头 `<!DOCTYPE ht`；且同一份假图被抓成 3 个不同序号，在 `source.md` 里被引用 4 次（byline 后 ×1、页尾 ×3）。**先按「字节数 == 原始 HTML」批量筛**，再删净所有对应引用；不要只看扩展名，也不要只删一个文件就以为干净了。
+- **`<title>` 与正文 H1 可能一致**：L067/L068 说「SEO title ≠ 正文 H1，一律用 H1」，但本次两者**完全相同**（129 字符，含弯撇号 `’`）。必须先比对再决定，不能机械弃用 `<title>`。不过 129 字符加中文译名仍超 150，按 L035 只缩短 `display_title` / `--name`（本次 91 字符），`meta.title` / `source_title` / 最终 Markdown 文件名保留完整原题。
+- **作者字段三处不一致（补 L068）**：`<meta name="author">` 只给 1 位，拍平 byline 给 4 位，**文末 `**Authors:** ...` 行给 8 位**（最完整）。L068 的「取 byline 全量」不够 —— 正确做法是三处都看、取最完整的那份写进元信息行，同时文末 Authors 行按原文保留并翻译。
+- **CMS 粗体尾随空格的二次踩坑（本次真实发生）**：`**Adaptive planning: **` / `**Execution with enterprise tools: **` / `**Memory: **` / `**Authors: **` 共 12 处。第一次修复写成 `re.sub(r'\*\*([A-Za-z][A-Za-z ]*:)\*\*(?=[A-Za-z\[])', r'**\1:** ', s)` —— 捕获组里已含冒号，替换模板又加一个，产出 12 处 `::**`。**写死做法**：用精确字符串替换（如 `s.replace('**Label: **','**Label:** ')`），或替换模板写 `r'**\1** '`（不额外加冒号）；修完必须 grep `::**` 与 `**X:**[^ ]` 复核，再跑校验。另注意 `**Label:**Every` 缺空格同样算格式异常，正确形态是 `**Label:** Every`。
+- **图片 alt 全空 + 拼图目视法**：8 张正文图里 7 张抓取器没给 alt，唯一给的 hero alt 是完整 H1（与页面名重复）。清洗版统一补简短英文 alt（描述图内容，不复制标题）；图片行不参与双语段落对照，补 alt 不影响校验。8 张一次做 **2×4 缩略拼图**（PIL 缩到 430×270，`ViewImage` 一次看完）比逐张读图省 token，还能横向比对有没有混入装饰图；本次确认 8 张全是指标卡／对比柱状图／架构图／案例对比截图，无 CTA 装饰。
+- **分段数随图片数线性增长**：8 张图把文本切成 9 段，uploader `segments=17`、逐段 `[1/17]…[17/17]` 全部成功，`verified=true` / `remote_images=8`。图片多不是失败信号，不要中途误判重传。
+- **自检项**：`bilingual_validate.py` ok=true + dry-run ok=true 双闸门；`local_images == remote_images == 8`；`block_list_block_children` 中 8 个 image block 均有 `file_id`、9 个标题、4 个 `bulleted_list` 双语项、无字面量 `##` 段落、bold 标签均正确渲染；目录 11→12 条且置顶。
+
+#### L071：`/press/` 新闻稿第 4 种模板 + 用户给「推算类洞察」时的事实边界编排（🟡 P1，2026-11-15，`glean-surpasses-200m-in-arr`）
+
+> 编号说明：接 L070。Glean 站已识别 4 种模板：`docs.glean.com`（Mintlify，L065）、`/blog/`（Webflow，L067/L068/L070）、`/perspectives/`（L069）、`/press/`（本条）。
+
+- **`/press/` 模板识别**：`curl` 原始 HTML 里 `Get The Resource` / `Listen to article` / `Recent posts` / `Table of contents` / `Work AI for all` **全部为 0**，可以直接判定不是 `/blog/` 或 `/perspectives/`；只剩站点副标题 `See how Glean works` ×2 与抓取器元信息行需删。
+  1. **双 H1**：首行是 `<title>` 带站点后缀 `| Glean Press`，第 12 行才是正文 H1。按 L058/L060 去后缀，只保留正文 H1 作 `meta.title` / `source_title` / 文件名 / `display_title`。本次正文 H1 79 字符，加中文译名共 107 字符 < 150，**不需要缩短**（L035 只在超限时触发）。
+  2. **作者留空**：新闻稿无 byline、无 `<meta name="author">`，`meta.author` 写 `""` 且双语稿元信息行**不写作者**，不要编造成「Glean 官方」或 `The Glean Team`。日期取页面 `Published Dec 08, 2025` + 正文 dateline `December 8, 2025 - Palo Alto, CA`。
+  3. **固定尾部属正文，不要当 CTA 删**：`Learn More` / `About Glean` boilerplate / `Connect with Us!` 社交链接 / `Contact` 媒体联系人（Sierra Dowling + `press@glean.com`）是新闻稿的标准组成，全部保留并逐段翻译；只有站点导航、抓取器元信息、段首 `---`（L024）、零宽字符 `\u200d` 才是噪音。
+  4. **加粗伪标题 → `##`**：8 个章节名原本是加粗段落（`**From Search to Agentic Action...**` 等），按 L011 按文档逻辑提升为 `##`，双语稿写 `## English / 中文`。这既给乐享提供章节导航，又让 `_paragraphs` 跳过它们、不干扰源文段落对账。`Learn More:` 提升时去掉尾部冒号。
+  5. **跨行粗体 + U+00A0**：`**About Glean\n\u200d**Glean is...` / `**Contact\n\u200d**Sierra...` 必须先删 `\u200d` 再拆成 `## 标题` + 独立正文段，否则 Markdown 会变成跨行粗体。`**Connect with Us!\xa0**[Blog](...)[LinkedIn](...)[Twitter X](...)` 含不换行空格且三个链接粘连，用正则精确拆成 `**Connect with Us!** [Blog](...) [LinkedIn](...) [Twitter X](...)`。
+  6. **CMS 粗体尾随空格仍有 8 处**（dateline、5 个 bullet 标签、Connect with Us!），继续按 L070 的精确字符串替换，替换模板别多加冒号。
+  7. **图片只有 2 张且性质不同**：`img_01`（378×372，alt=`Glean Icon - Circular - White`）是纯品牌圆形 logo，连同下方单独一行 `Glean` 文字一起删；`img_02`（2638×1482，PNG 编码的 `.webp`）是 `Years from 1 to 200M ARR` 企业软件对比曲线图，**含数据、支撑文章核心主张，必须保留**并改 `.png`、简化 alt。图片少时也要逐张目视，不能按「第一张=装饰」机械删。
+- **用户给「推算类洞察」时的编排（新惯例）**：本次第 2 点「员工超 1000 人，ARR 人效 20 万美元/人/年」**不是原文事实，是用户自己除出来的**。写法固定为：① 标题用 `### 2. ... / ...`，正文首句标 `**笔记作者推算（原文没有这个指标）**`；② 先把用到的两个原文数**逐字引用**（`$200 million`、`with more than 1,000 employees`），并说明**时点是否对齐**（本次同出 2025-12-08 这篇稿，对齐，可以相除）；③ 给推算式；④ **必须做边界校准** —— `more than 1,000` 是下界，实际人数更多则人效更低，所以 20 万是**上限**（`< $200K`）而非精确值；ARR 是年化 run-rate 不是已确认营收，「ARR per employee」不能等同于人均创收/利润；⑤ 明确列出哪些原文数据只是规模佐证、**不是**人效的直接证据。前几篇的惯例是区分「原文明确写出 / 事实校准 / 笔记作者推断」，推算类属于第三类，但比一般推断多一层「数值边界」要求。
+- **金额 `$` 与 `≈` 都安全**：`$200M` / `$100 million` / `$1M+` 在 uploader dry-run 里 `formulas: 0`，不会像 L039 的裸 `$` 那样触发公式误判；标题里的 `≈ $200K` 也正常。**不要**为了保险写成 `\$` —— `validate_no_image_metadata_or_escaped_dollars` 见到 `\$` 会直接报错。文件名含 `$` 在 macOS APFS 可直接创建，Bash 里记得用 `\$` 转义或单引号。
+- **自检项**：双闸门 ok=true；`local_images == remote_images == 1`；`block_list_block_children` 中 image block 有 `file_id`、10 个标题、13 个 `bulleted_list` 双语项、2 节 `Key Takeaways`、无字面量 `##` 段落；目录 12→13 条且置顶。

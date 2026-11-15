@@ -1,0 +1,20 @@
+{
+  "title": "About Glean Search",
+  "display_title": "About Glean Search / 关于 Glean 搜索",
+  "source_url": "https://docs.glean.com/administration/search/about",
+  "source_title": "About Glean Search",
+  "source_type": "article",
+  "language": "en",
+  "date": "2026-09-29",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d",
+  "verification": {
+    "ok": true,
+    "note": "fetch_article.py 因第 3 张截图下载超时触发『仍含远程图片 URL』硬守卫（L053），改用其落盘的 _debug_remote_image.md 为基础重建：补齐第 3 张图（curl 两次均截断，最终用 Playwright APIRequestContext 180s 重下 1478132 字节完整 PNG，PIL load() 校验通过）；4 张截图实际均为 PNG 编码但 3 张带 .webp 后缀，统一改名 .png；补回抓取器丢失的 Basic Search / Exact Matches / People Search 三个 h3；去掉 Mintlify 标题锚点残留的零宽空格；把 2 处被拍平成 infoXXX 的 info callout 还原为 > 引用块并去掉 info 标签；删除页尾版权、Was this page helpful 与含 #anchor 的 On this page 目录；日期取 footer 的 <time itemprop=dateModified datetime=2026-09-29>，页面无作者字段不编造",
+    "image_references": [
+      "images/img_01.png",
+      "images/img_02.png",
+      "images/img_03.png",
+      "images/img_04.png"
+    ]
+  }
+}

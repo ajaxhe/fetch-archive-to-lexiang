@@ -1,0 +1,33 @@
+{
+  "title": "What sets great retrieval augmented generation apart — and why vector search isn’t enough for AI",
+  "source_url": "https://www.glean.com/blog/hybrid-vs-rag-vector",
+  "source_title": "What sets great retrieval augmented generation apart — and why vector search isn’t enough for AI",
+  "source_type": "article",
+  "language": "non-zh",
+  "subtitle": "See how Glean works.",
+  "author": "Arvind Jain\n\nCEO",
+  "date": "May 15, 2024",
+  "content_length": 10659,
+  "image_count": 10,
+  "images": [
+    "images/img_02_3a30db66.webp",
+    "images/img_03_52e76461.webp",
+    "images/img_04_bd9f1938.webp",
+    "images/img_05_a6eb1312.webp",
+    "images/img_06_0475e79b.webp",
+    "images/img_07_8ff572c5.webp",
+    "images/img_08_b37408cb.webp",
+    "images/img_09_0fe8478f.webp",
+    "images/img_11_45d12ea7.png",
+    "images/img_12_1a9fe696.png"
+  ],
+  "fetched_at": "2026-11-14T23:45:57.975750",
+  "verification": {
+    "ok": true,
+    "source_sha256": "5ca54a09bb21d0a9f277883791eda6a18dd09a0d77ca2ab6a79975054568c5e7",
+    "markdown_image_references": 11,
+    "unique_local_images": 10,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}

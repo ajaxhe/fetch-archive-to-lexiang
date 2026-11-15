@@ -1,0 +1,25 @@
+{
+  "title": "Exploring Gleans approach search planning vs deep reasoning in AI",
+  "source_url": "https://www.glean.com/perspectives/exploring-gleans-approach-search-planning-vs-deep-reasoning-in-ai",
+  "source_title": "Exploring Gleans approach search planning vs deep reasoning in AI",
+  "source_type": "article",
+  "language": "non-zh",
+  "subtitle": "See how Glean works.",
+  "author": "The Glean Team",
+  "date": "Jun 04, 2026",
+  "content_length": 22974,
+  "image_count": 2,
+  "images": [
+    "images/img_01_18d5ccbc.webp",
+    "images/img_08_6e7e3ea5.webp"
+  ],
+  "fetched_at": "2026-11-15T09:14:17.358556",
+  "verification": {
+    "ok": true,
+    "source_sha256": "ef0668766036ae8ede03735c4e05609be14a72c8ae4f2da8877d883f2c89d771",
+    "markdown_image_references": 2,
+    "unique_local_images": 2,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}

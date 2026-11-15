@@ -1,0 +1,157 @@
+# Glean Waldo: An agentic search model that pairs with LLMs to deliver frontier intelligence with ~50% lower latency and ~25% fewer tokens
+
+*See how Glean works.*
+
+> 作者: Eddie Zhou
+
+Engineering | 日期: Apr 28, 2026
+
+> 原文链接: https://www.glean.com/blog/waldo-launch
+
+---
+
+6minutes read[Eddie Zhou
+
+Engineering](/authors/eddie-zhou)[Kunal Patil
+
+Software Engineer](/authors/kunal-patil)[Abhilash Samantapudi
+
+Product Manager](/authors/abhilash-samantapudi)[Julie Mills
+
+PMM](/authors/julie-mills)
+![](images/img_10_5fec2dae.png)
+
+
+![Glean Waldo: An agentic search model that pairs with LLMs to deliver frontier intelligence with ~50% lower latency and ~25% fewer tokens](images/img_06_49ad9503.webp)
+
+
+  
+
+  
+    Listen to article
+    
+  
+
+  
+  	
+    
+    
+    
+  
+
+
+### Table of contents
+
+[Most enterprise work starts with search](#most-enterprise-work-starts-with-search)[Waldo is an agentic search model](#waldo-is-an-agentic-search-model)[Training: DPO + reinforcement learning](#training-dpo-reinforcement-learning)[Phase 1: Direct preference optimization (DPO)](#phase-1-direct-preference-optimization-dpo)[Phase 2: Reinforcement learning](#phase-2-reinforcement-learning)[From Waldo to adaptive reasoning](#from-waldo-to-adaptive-reasoning)[Cost and latency savings from specialized models](#cost-and-latency-savings-from-specialized-models)[Contextless AI wastes tokensLearn how context, model routing, and execution design shape the cost and performance of enterprise AI.Get the whitepaper](/resources/guides/token-economy-enterprise-ai)Share this article:
+
+
+  
+
+  
+    Listen to article
+    
+  
+
+  
+  	
+    
+    
+    
+  
+
+Glean is used for tasks ranging from simple searches to deep work like data analysis, content creation, and taking action. Although we've historically used frontier models for search tasks, we’ve recently found that specialized models can do the job more efficiently. That's why we’re introducing Glean’s first agentic search model, nicknamed Waldo, which decides how to break down the question, which tools to use, what to read next, and when it has enough evidence to hand off to a frontier model for a high-quality answer.
+
+We believe the future of enterprise AI includes not just specialized tools, but specialized models designed for high-demand, well-defined jobs where latency and cost can be optimized. While frontier models can handle information retrieval on their own, doing so is often slower and more expensive than necessary. The better approach is a dedicated model, like Waldo, that works in concert with frontier models to deliver end-to-end agentic outcomes.
+
+Waldo doesn't just gather information. By running first and building up context before the frontier model ever sees the query, it becomes a natural input to a decision on the reasoning required for the job: does this query need a lightweight fast response, or should it be escalated to a higher reasoning level? The context from Waldo, including which tools were used, the number of searches, and semantic matching of the query against high-complexity and low-complexity tasks, helps determine the reasoning level required.
+
+On its own, Waldo is more than 10x faster than our default reasoning model (GPT-5.4 medium) on a per-LLM call basis, with average latency improvements of ~250 ms versus ~3s. Integrated into our harness, that translates into ~50% lower latency and ~25% fewer tokens with no quality regression. Built for enterprise search, Waldo uses [NVIDIA Nemotron 3 Nano](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16) as its base model and is post-trained for search planning.
+
+This post covers how we built Waldo, how we trained it, and the design decisions we made along the way.
+
+
+## Most enterprise work starts with search
+
+When we analyzed query patterns in Glean, one thing stood out: regardless of how complex the end goal is, most tasks start with search. When a user needs information about a project, a customer, a process, or a decision, Glean searches internal documents, reads results, and synthesizes an answer. Sometimes this takes one search; often it takes several iterative loops of reading a result, refining the query, and searching again. Even tasks that eventually require document creation, workflow execution, or cross-system actions begin with this context-gathering phase.
+
+Frontier models handle this well, but they're doing two very different jobs at once: *planning what to search for* and *reasoning about what they found to generate a response*. The first job is relatively mechanical: pattern matching over query intent, tool selection, and evidence sufficiency. The second job requires deep reasoning, long-context synthesis, and nuanced generation. Bundling both into a single expensive model means you're paying frontier-model prices for search planning, and you're adding latency on every turn of the loop.
+
+When you have a well-defined task that runs at high volume, what we found is that it's worth isolating it into a smaller, purpose-trained model rather than using a general-purpose reasoning model. The cost of the frontier model is better spent on synthesis and response generation.
+
+
+## Waldo is an agentic search model
+
+Waldo is a reinforcement-learned agentic search model that runs *before* a frontier model is invoked. Its job is to execute short tool plans over a fixed toolset, including Glean Search, employee search, and web search, then hand off control to the frontier model with the retrieved context already in place.
+
+Waldo searches until it has enough context or recognizes that the task needs capabilities beyond search (document creation, code execution, write tools). On completion, it doesn't generate natural language. It hands off control to the frontier model, which sees the conversation as if it had done the search work itself: same messages, same tool outputs.
+
+The key architectural decision was running Waldo as an initial step rather than having the frontier model invoke it as a sub-agent. We considered the sub-agent approach because it makes the orchestration story cleaner, but the latency was too great. In the sub-agent design, even a simple one-search query requires three serial inference steps: the frontier model decides to call Waldo, Waldo does the search, then the frontier model generates the response. Making Waldo the first model to be called can result in the best-case scenario of just one frontier model call,  since Waldo has already done the work.
+
+
+## Training: DPO + reinforcement learning
+
+Our training pipeline has two phases: supervised warmup followed by reinforcement learning with a task-specific reward signal. We used [Thinking Machine Labs’ Tinker API](https://github.com/thinking-machines-lab/tinker-cookbook) for LoRA-based fine-tuning which let us efficiently adapt the model without managing distributed training infrastructure.
+
+Waldo is a search *planner*. It decides which queries to run and when to stop, but the actual retrieval quality comes from Glean's existing search infrastructure, the product of years of work building enterprise semantic search models that learn a company's language and an Enterprise Graph that understands relationships across people, content, and systems. None of that gets replaced by Waldo; it gets augmented by it. What Waldo needs to learn is coverage: how many searches to run, how to vary the queries, and when the retrieved evidence is sufficient.
+
+
+### Phase 1: Direct preference optimization (DPO)
+
+The first phase uses DPO to get the base model into the right behavioral space. DPO works by training on preference pairs: for each query, the model sees a "preferred" output and a "rejected" output, and learns to assign higher likelihood to the preferred one. Over many pairs, the model's behavior shifts toward the preferred distribution without needing an explicit reward function.
+
+We construct these pairs from high-quality, anonymized production traces from Glean’s own deployment. Importantly, Waldo never trains on customer data or document content. The traces capture only tool-use patterns: which tools were called, in what order, and whether the plan succeeded. For the preferred side of each pair, when the production system uses core tools (search, document reader), we extract the tool plan. When the task doesn't require core tools, the preferred output is a pass-through or handoff signal. For the rejected side, we sample outputs from the base model and filter to cases that are non-trivially different from the production behavior.
+
+This is a model trained on *how to use tools*, not on enterprise data. Its purpose is conditioning: teaching the model the basic vocabulary of "when to search, when to stop, when to hand off."
+
+
+### Phase 2: Reinforcement learning
+
+This is the phase that enables Waldo to create *better* plans than the production system. We roll the model out against production queries and reward it based on outcomes.
+
+For queries where search was needed, the reward has two components. First, a binary termination signal indicating whether Waldo determined that core tools were sufficient or not. Second, a recall/F1-based reward signal against the documents that the production system cited in the final response. After the full system produces a final response, we look at which documents it actually cited, and then work backward to ask: did Waldo's searches surface those documents? Recall measures whether Waldo found all the documents that ended up mattering. F1 then balances recall and precision, penalizing Waldo if it retrieves a lot of noise alongside the relevant documents.
+
+What’s interesting is that if the production system took several iterative searches to find a document, Waldo can learn to find it in one. The reward signal doesn't care *how* Waldo got there; it cares whether the right evidence was retrieved.
+
+We train on production traces from Glean’s own deployment, and we’ve seen the model generalize well to external customer deployments. The base model is Nemotron 3 Nano (a mixture-of-experts architecture with 30B total parameters and 3B active parameters), chosen for its latency and cost profile. We deliberately chose to use Nemotron in an instruct-based fashion, rather than with reasoning, so we could push the boundaries on latency as our post-training environment allows us to achieve our quality goals without a reasoning model.
+
+
+![Waldo’s reward curve improved quickly in the first 100 to 200 training steps, continued to rise through the middle of training, and then flattened toward the end, suggesting that additional training still helped but delivered smaller gains than earlier steps.](images/img_07_ce66e922.webp)
+*Waldo’s reward curve improved quickly in the first 100 to 200 training steps, continued to rise through the middle of training, and then flattened toward the end, suggesting that additional training still helped but delivered smaller gains than earlier steps.*
+
+
+## From Waldo to adaptive reasoning
+
+Waldo solved the information-gathering problem, but it also uncovered a second opportunity: using the agentic search model's signals to dynamically determine how much reasoning a task requires.
+
+Because Waldo runs first, its own execution becomes the basis for that decision. It knows how many tools it invoked, how many documents came back, and whether its outputs were empty or sparse. In other words, it knows how much it struggled. A query that triggered multiple tool calls but returned little relevant content is a strong signal that a lightweight model won't be enough. When Waldo determines the task needs tools beyond search to take action or execute code, that handoff signal becomes another routing input, one the model produces naturally as part of its workflow. By reading its own work and weighing it against the complexity of the original request, the agentic search model decides how much reasoning is needed.
+
+
+![The measure of the model looking at the latency by performance profile. Adaptive mode, using Waldo, was able to cut the latency in half while retaining similar performance, as measured by normalized task success.](images/img_08_87b3e846.webp)
+*The measure of the model looking at the latency by performance profile. Adaptive mode, using Waldo, was able to cut the latency in half while retaining similar performance, as measured by normalized task success.*
+
+
+## Cost and latency savings from specialized models
+
+By combining Waldo with a frontier model, Glean was able to deliver ~50% lower latency and ~25% lower tokens while maintaining similar quality. We found that about half of all queries stay on a fast path with minimal reasoning, never need a frontier model's full capacity, and come without sacrificing answer quality.
+
+We think this pattern of small specialized models working in concert with frontier models will become increasingly common as agentic systems mature. Not every task in the pipeline needs frontier-level intelligence, and recognizing that is a meaningful step towards building systems that are both more capable and more efficient.
+
+Availability: Waldo will be deployed to customers soon.
+
+‍
+
+[Back to all stories](/blog)
+![](images/img_10_5fec2dae.png)
+
+
+## 
+
+[Get The Resource](#)
+![](images/img_10_5fec2dae.png)
+
+
+## 
+
+[Get The Resource](#)Work AI for all.[Get a Demo](/get-a-demo)
+![CTA Section Background Shape](images/img_11_1a9fe696.png)
+

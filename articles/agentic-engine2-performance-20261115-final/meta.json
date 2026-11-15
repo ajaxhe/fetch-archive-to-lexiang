@@ -1,0 +1,40 @@
+{
+  "title": "Glean’s Agentic Engine 2 achieves 94% completeness, excelling at challenging enterprise debugging, writing, and enumeration tasks",
+  "source_url": "https://www.glean.com/blog/live-fall-25-agentic-engine2-performance",
+  "source_title": "Glean’s Agentic Engine 2 achieves 94% completeness, excelling at challenging enterprise debugging, writing, and enumeration tasks",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "",
+  "author": "Megha Jhunjhunwala, John Pentakalos, Han Li, Yash Shah, Ayushi Mrigen, Eddie Zhou, Seema Jethani, Matthew Ding",
+  "date": "Sep 25, 2025",
+  "content_length": 14667,
+  "image_count": 8,
+  "images": [
+    "images/img_06_6e257135.png",
+    "images/img_07_0c2a2600.png",
+    "images/img_08_7da099ca.png",
+    "images/img_09_bd10f9be.png",
+    "images/img_10_493989fe.png",
+    "images/img_11_dd2a9285.png",
+    "images/img_12_12e3b407.png",
+    "images/img_13_77acb0e7.png"
+  ],
+  "fetched_at": "2026-11-15T18:04:08.601041",
+  "verification": {
+    "ok": true,
+    "note": "抓取包清洗版（www.glean.com/blog，Webflow 模板，与 hybrid-vs-rag-vector / waldo-launch 同模板，适用 L067/L068）。标题：本页 <title> 与正文 H1 一致，均为 129 字符的完整原题（含弯撇号 ’），无需按 L068 纠正缺撇号 SEO title；但加中文译名必超乐享 150 字符上限，故仅缩短 display_title 与 uploader --name，meta.title / source_title / 最终 Markdown 文件名保留完整原题。作者：<meta name=\"author\"> 只给 Megha Jhunjhunwala，抓取稿首部拍平 byline 另含 John Pentakalos / Eddie Zhou / Matthew Ding 共 4 位，文末 Authors 行给出最完整的 8 位（多 Han Li / Yash Shah / Ayushi Mrigen / Seema Jethani）⇒ 元信息取 8 位全量，文末 Authors 行按原文保留。日期取页面 Last updated Sep 25, 2025 + og:publish_date。删除噪音：See how Glean works、7minutes read 拍平 byline（含 /authors/ 相对链接）、段首 ---（L024）、### Table of contents 及 8 个 #anchor 锚点、Back to all stories、Get The Resource ×2、两个空 ## 标题、Work AI for all、Get a Demo、零宽字符行。图片：抓取器下载 16 张、落盘 12 个文件、meta 记 10 张 unique；img_05/img_14/img_15 均为 624236 字节且文件头是 <!DOCTYPE ht 的「HTML 假 png」（字节数恰等于 curl 原始 HTML），连同 4 处引用一并删除；img_16 是 AVIF 且 alt=CTA Section Background Shape，属 CTA 装饰，删除；其余 8 张逐张用 PIL 校验 + 2×4 缩略拼图目视确认全为正文图（指标卡、Agentic Engine 1 vs 2 质量柱状图、自适应规划架构图、mean action calls 柱状图、以及 debugging/writing/enumeration 四张案例对比截图），其中 img_06/img_11/img_12/img_13 是 PNG 编码却叫 .webp，统一改 .png 并同步正文引用；8 张均补了简短英文 alt。CMS 粗体尾随空格 **Adaptive planning: ** / **Execution with enterprise tools: ** / **Memory: ** / **Authors: ** 共 12 处已修成 **Label:** + 空格（修复时曾误加双冒号，已复核改正为单冒号），避免乐享粗体序列化异常。正文无表格、无裸 ~ 近似值、无页内相对链接；4 个结论 bullet 按 English / 中文 同项双语。",
+    "image_references": [
+      "images/img_06_6e257135.png",
+      "images/img_07_0c2a2600.png",
+      "images/img_08_7da099ca.png",
+      "images/img_09_bd10f9be.png",
+      "images/img_10_493989fe.png",
+      "images/img_11_dd2a9285.png",
+      "images/img_12_12e3b407.png",
+      "images/img_13_77acb0e7.png"
+    ],
+    "platform_noise_hits": []
+  },
+  "display_title": "Glean’s Agentic Engine 2 achieves 94% completeness / Glean Agentic Engine 2：内部机制与 94% 任务完成率",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d"
+}

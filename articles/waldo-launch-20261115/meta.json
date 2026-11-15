@@ -1,0 +1,28 @@
+{
+  "title": "Glean Waldo: An agentic search model that pairs with LLMs to deliver frontier intelligence with ~50% lower latency and ~25% fewer tokens",
+  "source_url": "https://www.glean.com/blog/waldo-launch",
+  "source_title": "Glean Waldo: An agentic search model that pairs with LLMs to deliver frontier intelligence with ~50% lower latency and ~25% fewer tokens",
+  "source_type": "article",
+  "language": "non-zh",
+  "subtitle": "See how Glean works.",
+  "author": "Eddie Zhou\n\nEngineering",
+  "date": "Apr 28, 2026",
+  "content_length": 12699,
+  "image_count": 5,
+  "images": [
+    "images/img_10_5fec2dae.png",
+    "images/img_06_49ad9503.webp",
+    "images/img_07_ce66e922.webp",
+    "images/img_08_87b3e846.webp",
+    "images/img_11_1a9fe696.png"
+  ],
+  "fetched_at": "2026-11-15T08:05:06.081523",
+  "verification": {
+    "ok": true,
+    "source_sha256": "f3c9e587db3a9f67fca8c1ffa5be67480a37e6526a8a455586ad5b07354440d2",
+    "markdown_image_references": 7,
+    "unique_local_images": 5,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}

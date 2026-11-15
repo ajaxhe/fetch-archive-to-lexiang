@@ -328,3 +328,92 @@ python scripts/fetch_article.py fetch "https://weibo.com/<uid>/<mid>" --output-d
 
 脚本使用 `from __future__ import annotations` 以兼容 Python 3.9（`str | None` 联合类型语法在 3.9 中不可用）。
 
+### Mintlify 文档站（docs.glean.com 等）
+
+公开文档站，无需登录态，直连可达。用 CDP `fetch_article.py` 抓取即可，但抓取稿**必须**做清洗版工作包（详见 lessons-learned L065）：
+
+| 现象 | 处理 |
+|---|---|
+| FAQ 折叠面板的问题标题被拍平，只剩答案 | 从 `curl -sL` 原始 HTML 按问题关键词恢复问题文本，写成 `####` 标题并与答案顺序对齐 |
+| `noteUse these times...` / `warningUsage of Glean...` 标签粘连 | 还原成 `> [!note] Note / 注` / `> [!note] Warning / 警告`，英文行与中文行分开 |
+| 标题尾部零宽字符 `\u200b`、章节间 `---` | 全部清除（L024） |
+| 页尾 `© <年份> ...Was this page helpful?On this page- [...]` | 整段删除；同时删除与图片 alt 重复的图注行 |
+| 首张图 alt=`banner` 的渐变装饰横幅 | 删除；正文截图保留 |
+| 图片扩展名 `.webp` 但实际是 PNG 编码 | 用 `file` 核实后改名 `.png`，同步 `meta.json.verification.image_references` |
+| 正文链接是 `/get-started/...` 相对路径 | 补全为 `https://docs.glean.com/...`，链接留在原句内（L057） |
+
+页面日期取抓取器 `meta.json.date`（如 `2026-11-04`），文档站通常没有作者，不要编造。清洗版放新目录 `<slug>-YYYYMMDD-final`，随后 `bilingual_validate.py --profile generic --json` 必须 `ok=true` 才能上传。
+
+### Glean 官方博客（www.glean.com/blog，Webflow）
+
+公开博客，无需登录态，CDP 抓取即可。抓取稿必须做 `-final` 清洗版工作包（完整判据见 lessons-learned L067）：
+
+| 现象 | 处理 |
+|---|---|
+| `.png` 文件头是 `<!DOCTYPE ht`、字节数等于 `curl` 的 HTML | 「HTML 假 png」，删；用 `file` 判定，不看扩展名 |
+| alt=`CTA Section Background Shape` 的 AVIF 大图 | CTA 装饰，删；alt=`Product Illustration` 的正文示意图保留并逐张读图确认 |
+| `.webp` 名但内容是 PNG | 统一改 `.png`，同步 `meta.json.verification.image_references` |
+| `og:title` / `<title>` 是 SEO 标题，与正文 H1 不同 | `meta.title`、文件名、`display_title` 一律用正文 H1 |
+| `5minutes read[作者\n\n职位](/authors/...)`、残缺 `Table of contents`、页尾 `Back to all stories` / `Get The Resource` / 空 `##` / `Work AI for all` | 全部删除；作者/日期改用 `<meta name="author">`、页面 `Last updated` + `og:publish_date` |
+| `**Scholastic **serves` 粗体尾随空格 | 修成 `**Scholastic** serves`，否则乐享粗体序列化异常 |
+| 同一引导段出现两份措辞略异的变体 | 先用原始 HTML 去标签计数确认是 CMS 自身重复；确认后**两份都保留**，不擅自删减 |
+| 斜体图注与通用 alt 不重复、有信息量 | 保留并翻译（区别于 Mintlify 的重复图注） |
+
+正文相对链接补 `https://www.glean.com` 前缀，链接留在原句内（L057）。
+
+补充规律（2026-11-15 `waldo-launch`，详见 L068）：
+
+| 现象 | 处理 |
+|---|---|
+| `Listen to article` 音频播放器 UI（常成对出现） | 整块删，不进正文 |
+| byline 有多位作者（本次 4 位），`<meta name="author">` 只有第一位 | 取 byline 全量写入元信息行 |
+| 图表 `alt` 与下方斜体图注逐字重复且很长 | 清洗版简化 alt，保留斜体图注原文并翻译 |
+| 正文 H1 超长（136 字符） | `meta.title` / 文件名保留完整原题；只缩短 `display_title` 与 `--name`（L035） |
+| 原文含 `~50%` / `~250 ms` 等近似值 | `source.md` 保留 `~`，双语稿统一改 `≈`，否则 `validate_no_unsafe_tildes` 失败 |
+
+`Availability: ... will be deployed to customers soon.` 这类上线状态句属正文末句，必须保留。
+
+### Glean Perspectives（www.glean.com/perspectives，Webflow 新模板）
+
+与 `/blog/` 模板**不同**（详见 lessons-learned L069）。公开页面、CDP 抓取即可，但必须做 `-final` 清洗版工作包：
+
+| 现象 | 处理 |
+|---|---|
+| 抓取稿出现 2 个 H1：首行是缺撇号的 SEO title，约第 20 行才是正文 H1 | 只保留正文 H1 作 `meta.title` / 文件名 / `display_title`；`og:title` 与 `<title>` 是 SEO 版，不采信 |
+| 残缺且含 `#anchor` 的 `Table of contents`、`See how Glean works`、`11minutes read` | 整块删 |
+| 页尾 `Back to Perspectives home` / `## Recent posts` 六张推荐卡（含多次 `No items found.`）/ `## Work AI that works.` / `Get a demo` / `Request a demo` | 全部删除 |
+| 8 张下载图仅 2 张落盘，均为 PNG 编码的 `.webp` | hero 保留并改 `.png`；`CTA BG` 装饰图删除；同步 `meta.json.verification.image_references` |
+| 正文 3 列 5 行表格 | 每单元格写成 `English<br>中文`（列数 ≤10），行数不超过乐享上限 |
+| 5 个 FAQ 问题标题 | 保留，写成 `### English / 中文` |
+| 原文用 `approximately` / `roughly` 表述数值，无裸 `~` | 不要套用 `/blog/` 的 `~`→`≈` 规则，`source.md` 与双语稿都保持原词 |
+
+作者取 `<meta name="author">`（如 `The Glean Team`），日期取 `Last updated` + `og:publish_date`。`entry_list_children` 查重后上传；双语稿里英文源段**禁止混入 CJK**，否则 `bilingual_validate.py` 会报「缺少源文段落」（L069）。线上对账自检项见 L069。
+
+补充规律（2026-11-15 `live-fall-25-agentic-engine2-performance`，`/blog/` 模板第三次复现，详见 L070）：
+
+| 现象 | 处理 |
+|---|---|
+| 3 个 `.png` 字节数恰好等于 `curl` 原始 HTML（本次 624236），文件头 `<!DOCTYPE ht` | 按「字节数 == 原始 HTML」批量识别 HTML 假 png；同一假图常有多个序号且被引用多次，全部删净 |
+| `<title>` 与正文 H1 相同（129 字符，含弯撇号） | 先比对再决定，不要机械套用「SEO title ≠ H1」；仍按 L035 只缩短展示名 |
+| `<meta name="author">` 1 位 / 拍平 byline 4 位 / 文末 `Authors:` 行 8 位 | 三处都看，取最完整的一份（本次文末 8 位）；文末 Authors 行按原文保留并翻译 |
+| `**Label: **` 粗体尾随空格（本次 12 处） | 用精确字符串替换，替换模板别多加冒号；修完 grep `::**` 复核（L070） |
+| 7/8 张正文图 alt 为空，hero 的 alt 是完整 H1 | 清洗版补简短英文 alt；用 2×4 缩略拼图一次目视确认全部为正文图 |
+
+### Glean 新闻稿（www.glean.com/press，第 4 种模板）
+
+与 `/blog/`、`/perspectives/`、`docs.glean.com` 都不同（详见 lessons-learned L071）。公开页面、CDP 抓取即可，必须做 `-final` 清洗版：
+
+| 现象 | 处理 |
+|---|---|
+| 原始 HTML 里 `Get The Resource` / `Listen to article` / `Recent posts` / `Table of contents` / `Work AI for all` 全为 0 | 据此判定是 `/press/` 模板，不要套用 `/blog/` 的噪音表；只需删 `See how Glean works`、抓取器元信息行、段首 `---`、零宽字符 |
+| 双 H1：首行是带 `\| Glean Press` 后缀的 `<title>`，第 12 行才是正文 H1 | 去站点后缀，只保留正文 H1 作 `meta.title` / `source_title` / 文件名 / `display_title` |
+| 无 byline、无 `<meta name="author">` | `author` 留空，双语稿元信息行不写作者，**不编造**；日期取 `Published ...` + 正文 dateline |
+| `Learn More` / `About Glean` / `Connect with Us!` / `Contact` 固定尾部 | 属新闻稿正文，**保留并逐段翻译**，不要当 CTA 噪音删 |
+| 8 个章节名是加粗伪标题（`**From Search to Agentic Action...**`） | 按 L011 提升为 `##`，双语稿写 `## English / 中文`；`Learn More:` 去掉尾部冒号 |
+| `**About Glean\n\u200d**...` / `**Contact\n\u200d**...` 跨行粗体 | 先删 `\u200d`，再拆成 `## 标题` + 独立正文段 |
+| `**Connect with Us!\xa0**[Blog](...)[LinkedIn](...)[Twitter X](...)` | 含 U+00A0 且链接粘连，精确拆成 `**Connect with Us!** [Blog](...) [LinkedIn](...) [Twitter X](...)` |
+| `**Label: **` 粗体尾随空格（本次 8 处，含 dateline） | 按 L070 精确字符串替换，替换模板别多加冒号，修完 grep `::**` |
+| 只有 2 张图：圆形品牌 logo + `Years from 1 to 200M ARR` 数据曲线图 | logo 连同下方单独一行 `Glean` 文字一起删；数据图保留、改 `.png`、简化 alt。图片少也要逐张目视 |
+
+金额 `$200M` 等普通 `$` 不需要转义（dry-run `formulas: 0`），写 `\$` 反而会被双语校验拒绝。用户给「推算类洞察」（如 ARR 人效）时按 L071 的编排：标「笔记作者推算」+ 逐字引用原始数值 + 核对时点 + 给出数值边界（`more than 1,000` 是下界 ⇒ 20 万是上限）。
+

@@ -1,0 +1,42 @@
+{
+  "title": "What sets great retrieval augmented generation apart — and why vector search isn’t enough for AI",
+  "source_url": "https://www.glean.com/blog/hybrid-vs-rag-vector",
+  "source_title": "What sets great retrieval augmented generation apart — and why vector search isn’t enough for AI",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "",
+  "author": "Arvind Jain（CEO）",
+  "date": "May 15, 2024",
+  "content_length": 10659,
+  "image_count": 10,
+  "images": [
+    "images/img_02_3a30db66.webp",
+    "images/img_03_52e76461.webp",
+    "images/img_04_bd9f1938.webp",
+    "images/img_05_a6eb1312.webp",
+    "images/img_06_0475e79b.webp",
+    "images/img_07_8ff572c5.webp",
+    "images/img_08_b37408cb.webp",
+    "images/img_09_0fe8478f.webp",
+    "images/img_11_45d12ea7.png",
+    "images/img_12_1a9fe696.png"
+  ],
+  "fetched_at": "2026-11-14T23:45:57.975750",
+  "verification": {
+    "ok": true,
+    "note": "抓取包清洗版（glean.com/blog Webflow）：删除 2 个「HTML 假 png」（img_10/img_11 实为 618595 字节 HTML）与 1 张 CTA Section Background Shape AVIF（img_12）；8 张正文图均经人工读图确认为示意图/截图，实为 PNG 编码故统一改 .png；清除站点导航副标题、5minutes read 拍平 byline、残缺且含 #anchor 的 Table of contents、页尾 Back to all stories / Get The Resource ×2 / 两个空 H2 / Work AI for all / Get a Demo 与段首 ---（L024）；修复粗体尾随空格 **Scholastic **；正文相对链接补全为 glean.com 绝对地址；页面自身存在两组措辞略异的 Scholastic 引导段（原始 HTML 各 1 次，属 CMS 编辑重复），按不丢原文原则两份均保留；8 条斜体图注不与 alt 重复，作为独立正文保留。日期取页面 Last updated 与 og:publish_date（May 15, 2024），作者 Arvind Jain（CEO）取自 meta author；正文 H1 为原文标题，SEO title「Hybrid Search vs. RAG and Vector Search: Key Differences」未采用。",
+    "image_references": [
+      "images/img_02_3a30db66.png",
+      "images/img_03_52e76461.png",
+      "images/img_04_bd9f1938.png",
+      "images/img_05_a6eb1312.png",
+      "images/img_06_0475e79b.png",
+      "images/img_07_8ff572c5.png",
+      "images/img_08_b37408cb.png",
+      "images/img_09_0fe8478f.png"
+    ],
+    "platform_noise_hits": []
+  },
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d",
+  "display_title": "What sets great retrieval augmented generation apart — and why vector search isn’t enough for AI / 优秀的 RAG 凭什么脱颖而出：为什么光靠向量搜索还不够"
+}

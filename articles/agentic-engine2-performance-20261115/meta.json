@@ -1,0 +1,33 @@
+{
+  "title": "Glean’s Agentic Engine 2 achieves 94% completeness, excelling at challenging enterprise debugging, writing, and enumeration tasks",
+  "source_url": "https://www.glean.com/blog/live-fall-25-agentic-engine2-performance",
+  "source_title": "Glean’s Agentic Engine 2 achieves 94% completeness, excelling at challenging enterprise debugging, writing, and enumeration tasks",
+  "source_type": "article",
+  "language": "non-zh",
+  "subtitle": "See how Glean works.",
+  "author": "Megha Jhunjhunwala\n\nEngineering",
+  "date": "Sep 25, 2025",
+  "content_length": 14667,
+  "image_count": 10,
+  "images": [
+    "images/img_15_9a5f867a.png",
+    "images/img_06_6e257135.webp",
+    "images/img_07_0c2a2600.png",
+    "images/img_08_7da099ca.png",
+    "images/img_09_bd10f9be.png",
+    "images/img_10_493989fe.png",
+    "images/img_11_dd2a9285.webp",
+    "images/img_12_12e3b407.webp",
+    "images/img_13_77acb0e7.webp",
+    "images/img_16_1a9fe696.png"
+  ],
+  "fetched_at": "2026-11-15T18:04:08.601041",
+  "verification": {
+    "ok": true,
+    "source_sha256": "37c302358cc403a1328238995597e4b70b62fa2e3c5e0bf7d8885adcf8fd92d9",
+    "markdown_image_references": 12,
+    "unique_local_images": 10,
+    "missing_local_images": 0,
+    "platform_noise_hits": []
+  }
+}

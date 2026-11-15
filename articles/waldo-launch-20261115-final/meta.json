@@ -1,0 +1,32 @@
+{
+  "title": "Glean Waldo: An agentic search model that pairs with LLMs to deliver frontier intelligence with ~50% lower latency and ~25% fewer tokens",
+  "source_url": "https://www.glean.com/blog/waldo-launch",
+  "source_title": "Glean Waldo: An agentic search model that pairs with LLMs to deliver frontier intelligence with ~50% lower latency and ~25% fewer tokens",
+  "source_type": "article",
+  "language": "en",
+  "subtitle": "",
+  "author": "Eddie Zhou（Engineering）、Kunal Patil（Software Engineer）、Abhilash Samantapudi（Product Manager）、Julie Mills（PMM）",
+  "date": "Apr 28, 2026",
+  "content_length": 12699,
+  "image_count": 5,
+  "images": [
+    "images/img_10_5fec2dae.png",
+    "images/img_06_49ad9503.webp",
+    "images/img_07_ce66e922.webp",
+    "images/img_08_87b3e846.webp",
+    "images/img_11_1a9fe696.png"
+  ],
+  "fetched_at": "2026-11-15T08:05:06.081523",
+  "verification": {
+    "ok": true,
+    "note": "抓取包清洗版（glean.com/blog Webflow，按 L067）：3 个「HTML 假 png」（img_05/09/10 均 619438 字节、文件头 <!DOCTYPE ht，等于 curl 的 HTML）与 1 张 CTA Section Background Shape AVIF（img_11）删除；img_01~04 为下载后转换失败的小头像/图标且未被正文引用，不入库。3 张正文图（hero、reward curve、latency/performance profile）经 PIL 读图确认为 PNG 编码，统一改 .png。清除站点副标题 See how Glean works、6minutes read 拍平 byline（含 4 位作者）、Listen to article 播放器 UI ×2、残缺且含 CTA 文案的 Table of contents、页尾 Back to all stories / Get The Resource ×2 / 两个空 H2 / Work AI for all / Get a Demo 与段首 ---（L024）；删除零宽字符与重复假图引用；正文相对链接补 https://www.glean.com 前缀（L057）。img_07/img_08 的 alt 与其下方斜体图注逐字重复，清洗版简化 alt、保留图注英文原文并翻译，信息不丢失。H1 共 136 字符，按 L035 缩短线上展示名（display_title 93 字符），meta.title/source_title 与最终 Markdown 文件名仍保留完整原题。作者取页面 byline 四位（meta author 仅 Eddie Zhou），日期取 Last updated 与 og:publish_date（Apr 28, 2026）。",
+    "image_references": [
+      "images/img_06_49ad9503.png",
+      "images/img_07_ce66e922.png",
+      "images/img_08_87b3e846.png"
+    ],
+    "platform_noise_hits": []
+  },
+  "display_title": "Glean Waldo: An agentic search model with ~50% lower latency / Glean Waldo：延迟降低约 50% 的智能体搜索模型",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d"
+}
