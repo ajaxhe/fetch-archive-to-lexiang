@@ -1245,3 +1245,26 @@ Agent 在以下时机**必须**更新此文件：
 - **用户给「推算类洞察」时的编排（新惯例）**：本次第 2 点「员工超 1000 人，ARR 人效 20 万美元/人/年」**不是原文事实，是用户自己除出来的**。写法固定为：① 标题用 `### 2. ... / ...`，正文首句标 `**笔记作者推算（原文没有这个指标）**`；② 先把用到的两个原文数**逐字引用**（`$200 million`、`with more than 1,000 employees`），并说明**时点是否对齐**（本次同出 2025-12-08 这篇稿，对齐，可以相除）；③ 给推算式；④ **必须做边界校准** —— `more than 1,000` 是下界，实际人数更多则人效更低，所以 20 万是**上限**（`< $200K`）而非精确值；ARR 是年化 run-rate 不是已确认营收，「ARR per employee」不能等同于人均创收/利润；⑤ 明确列出哪些原文数据只是规模佐证、**不是**人效的直接证据。前几篇的惯例是区分「原文明确写出 / 事实校准 / 笔记作者推断」，推算类属于第三类，但比一般推断多一层「数值边界」要求。
 - **金额 `$` 与 `≈` 都安全**：`$200M` / `$100 million` / `$1M+` 在 uploader dry-run 里 `formulas: 0`，不会像 L039 的裸 `$` 那样触发公式误判；标题里的 `≈ $200K` 也正常。**不要**为了保险写成 `\$` —— `validate_no_image_metadata_or_escaped_dollars` 见到 `\$` 会直接报错。文件名含 `$` 在 macOS APFS 可直接创建，Bash 里记得用 `\$` 转义或单引号。
 - **自检项**：双闸门 ok=true；`local_images == remote_images == 1`；`block_list_block_children` 中 image block 有 `file_id`、10 个标题、13 个 `bulleted_list` 双语项、2 节 `Key Takeaways`、无字面量 `##` 段落；目录 12→13 条且置顶。
+
+#### L072：Foundation Capital / Framer 站——「提取与转换两个阶段用了不同 DOM 节点」导致 0 字符，以及「双语 bullet 丢前缀」的校验假阴性（🔴 P0 + 🟡 P1，2026-11-16，`fc-context-graphs`）
+
+> 编号说明：接 L071。本条含一个 P0 的抓取器通用缺陷修复（已落到 `scripts/fetch_article.py`）与一个 P1 的装配/对账教训。新条目一律从 **L073** 往后排。
+
+- **P0 症状**：`fetch_article.py fetch <URL> --cdp` 对 `foundationcapital.com/ideas/...` 首跑 `source.md` 只有 0 字符正文（或极短），但 `meta.json.verification` 里提取阶段明明拿到了长文本。
+  - **根因**：脚本是「两阶段」——① 提取阶段用一组选择器找正文容器（含 `[class*="body"]` 兜底，最后回退 `document.body`）；② 转换阶段用**另一组**选择器重新找节点再做 innerText→Markdown。该站是 Framer 生成页，DOM 为 `<div id="main">` / `<div id="article-content">` / `<div id="content-container">` / `data-framer-component-type="RichTextContainer"`，`article` / `main` / `.entry-content` / `[class*="body"]` **全部不命中**，提取阶段走了 `document.body` 回退，而转换阶段的选择器列表里没有这个回退 → 转换节点为空 → 0 字符。
+  - **修法（写死，已合入脚本）**：提取阶段选中容器后立刻打标记 `articleEl.setAttribute('data-fetch-article-root','1')`；**`document.body` 回退分支也必须打同一个标记**（第一次只改主分支，仍然失败，就是漏了这里）；转换阶段首行改为 `let articleEl = document.querySelector('[data-fetch-article-root="1"]')`，未命中才走 Substack / a16z / Webflow 等既有兜底。这样两个阶段永远是同一个 DOM 节点，与站点模板无关。微信分支 `isWechat` 仍按 `#js_content` 覆盖，属预期。
+  - **判定信号**：`curl` 原始 HTML 里出现 `Made in Framer` / `data-framer-component-type` 数百次，且通用正文选择器全不命中 → 想到两阶段节点不一致，不要反复重抓或改用 `--no-cdp`。
+- **P1 症状（本次真实踩坑，两道闸门都没拦住）**：装配双语稿时把列表行写成 `en[2:] + " / " + cjk`，**把 `- ` 前缀一起剥掉了**，4 个 bullet 变成 4 行普通文本且行内含 ` / `。结果：
+  - `bilingual_validate.py --profile generic` 仍 `ok=true` —— `validate_bilingual_list_items_paired` 只检查匹配 `LIST_ITEM_RE`（`- ` 开头）的行，**一行都没有 ⇒ 空集 ⇒ 假阳性通过**；
+  - `lexiang_upload.py --dry-run` 也 `ok=true`，`headings=11` / `local_images=1` 全正常；
+  - 上传后 `verified=true`、`remote_images=1`，**但线上 `block_list_block_children` 显示 4 个 bullet 被合并成一个 `p` 块**（元素之间用 `\n` 拼接），列表结构丢失。
+  - **修法**：装配脚本写 `"- " + en[2:] + " / " + cjk`；**上传前后都要做「本地列表行数 == 线上 `bulleted_list` 块数」对账**（本次 `grep -c '^- '` = 4，线上 `bulleted_list` = 4）。仅凭 `verified=true` 不能判定富元素结构正确。
+  - **修复已上传页面不要重新 create**：用 `lexiang_upload.py upload "<MD>" --entry-id <已存在的 entry_id> --profile csig --json`，源码里 `if args.entry_id: clear_existing_page(client, entry_id)` 会先清空再重写，返回 `"action": "updated"`，**不产生重复条目**；`--pin` 在 `--entry-id` 模式下被跳过（页面已置顶，无需再移）。本次同一 entry_id `a6e78b7d…` 原地更新后目录仍是 14 条。
+- **Framer / Foundation Capital 平台规律（新模板，见 platform-specific.md 同名章节）**：
+  1. 双 H1：首行是 `<title>`/`og:title` 带 ` - Foundation Capital` 后缀，约第 16 行才是正文 H1；`<title>` 与 `og:title` 相同，均带后缀。无 `<meta name="author">`，作者取正文 byline 的两个 `team-members` 链接（Jaya Gupta、Ashu Garg），页面另有重复作者卡「Ashu Garg, Jaya Gupta」。日期取 `<time datetime="2025-12-22T00:00:00.000Z">`。`12 MIN READ` 是 JS 估算，`curl` 原始 HTML 里是 `0 MIN READ` 占位。
+  2. 分类标签 `AI` / `Enterprise` 被拍平粘在首段段首成 `AIENTERPRISEThe last generation...`，必须剥离（信息移到顶部元信息行，不要丢）。
+  3. **正文里穿插三类 Framer 卡片，全部属于侧栏/导流，不是文章正文**：`#### About Ashu` 作者卡（`Secondary Content / Content` 容器 + 头像）、两次 `Get insights directly to your inbox.` newsletter CTA（`Medium CTA`）、相关文章导流卡（`Get the full report / Text & CTA`：缩略图 + 作者 + `#### The compounding asset enterprise software never had` + 摘要 + `Read the article`）。判定依据是 `data-framer-name`，不要只看文字像不像正文。**这和 L071 的 `/press/` 不同**：新闻稿的 `About Glean` / `Contact` 属正文，Framer 的这些卡片属页面家具。
+  4. 页脚固定噪音：两处办公地址（含 U+00A0）、`Work at our companies` / `Terms of Use` / `Privacy Policy` / `© Foundation Capital 2026` / `Cookie Settings` / reCAPTCHA 链接 / `framer.com/edit?framerSiteId=...` 编辑器链接。
+  5. 图片 3 张但性质各异，必须逐张目视：hero（2560×1440 真 JPEG，og:image，alt 只是作者署名无描述）保留并改写 alt；作者头像 443×443 与相关文章缩略图 439×439（内容与本文高度相关的飞轮图，**容易被误判为正文图**）分别属于侧栏卡和导流卡，随卡片一起删。最终只留 1 张。
+  6. CMS 格式：`**the decision traces **-` / `**Incumbents will fight back. **` 两处粗体尾随空格（按 L070 精确字符串替换）；`PlayerZero` 链接带一长串 google ads 追踪参数，简化为 `https://playerzero.ai/`（链接 URL 不参与 `_normalize` 对账，安全）；6 个独立成段的加粗伪标题按 L011 提升为 `###`，**源文与双语稿必须同步提升**，否则 `_paragraphs` 在源文里算正文段、在双语稿里被当标题跳过，会误报「缺少源文段落」。
+- **自检项**：`bilingual_validate.py` ok=true + dry-run ok=true + `grep -c '^- '` 与线上 `bulleted_list` 块数一致（第三道是本次新增）；`verified=true` / `local_images == remote_images == 1` / `local_callouts == remote_callouts == 0`；11 个标题（6 h2 + 5 h3）、4 个 `bulleted_list`、2 个 quote 元信息块、image block 有 `file_id`、无字面量 `##` 段落；目录分页查重后 13→14 且新页 `sort_id` 最小（置顶）、`status=finished`；原地更新后目录条数不变。

@@ -417,3 +417,24 @@ python scripts/fetch_article.py fetch "https://weibo.com/<uid>/<mid>" --output-d
 
 金额 `$200M` 等普通 `$` 不需要转义（dry-run `formulas: 0`），写 `\$` 反而会被双语校验拒绝。用户给「推算类洞察」（如 ARR 人效）时按 L071 的编排：标「笔记作者推算」+ 逐字引用原始数值 + 核对时点 + 给出数值边界（`more than 1,000` 是下界 ⇒ 20 万是上限）。
 
+
+### Foundation Capital / Framer 生成站（foundationcapital.com/ideas/…）
+
+2026-11-16 首次遇到（`context-graphs-ais-trillion-dollar-opportunity`），详见 lessons-learned **L072**。公开页面，CDP 抓取即可，但必须做 `-final` 清洗版；抓取器需已带 L072 的 `data-fetch-article-root` 两阶段锁定修复，否则正文为 0 字符。
+
+| 现象 | 处理 |
+|---|---|
+| `curl` 原始 HTML 首行 `Made in Framer`，`data-framer-component-type` 出现 200+ 次；`article` / `main` / `.entry-content` / `[class*="body"]` 全不命中 | 提取阶段会回退 `document.body`；**必须**给回退节点也打 `data-fetch-article-root="1"`，转换阶段优先复用该节点。别用 `--no-cdp` 或反复重抓来绕过 |
+| 双 H1：首行是带 ` - Foundation Capital` 后缀的 `<title>`（与 `og:title` 相同），约第 16 行才是正文 H1 | 去站点后缀，只保留正文 H1 作 `meta.title` / `source_title` / 文件名 / `display_title`（本次 45 字符，加中文 67 < 150，无需按 L035 缩短） |
+| 无 `<meta name="author">`；byline 是两个 `../team-members/...` 链接，页面另有重复作者卡 | 作者取 byline（Jaya Gupta, Ashu Garg）；日期取 `<time datetime="...">Dec 22, 2025</time>` + `Posted`；`12 MIN READ` 是 JS 估算，原始 HTML 为 `0 MIN READ` 占位，不要当权威元数据 |
+| `AIENTERPRISEThe last generation...` 分类标签粘在首段段首 | 剥掉标签，写入顶部元信息行（`分类: AI · Enterprise`），正文首段从 `The last generation` 起 |
+| `#### About Ashu` 作者卡（`Secondary Content / Content` + 头像）、`### Get insights directly to your inbox.`、`## Get insights directly to your inbox.` | 都是 Framer 侧栏 / newsletter CTA，整块删除；**不要**套用 L071「About Glean 属新闻稿正文」的结论 |
+| `#### The compounding asset enterprise software never had` + `Ashu Garg, Jaya Gupta` + 摘要 + `Read the article` + 一张飞轮图 | 是 `Get the full report / Text & CTA` 相关文章导流卡（另一篇文章的推广），整块删除；缩略图虽与本文主题相关，也不是正文配图 |
+| 页脚两处办公地址（含 U+00A0）、`Work at our companies`、`Terms of Use`、`Privacy Policy`、`© Foundation Capital 2026`、`Cookie Settings`、reCAPTCHA 链接、`framer.com/edit?framerSiteId=...` | 全部删除；抓取器元信息行与段首 `---` 按 L024 一并删 |
+| 3 张图：hero 真 JPEG 2560×1440（alt 只是署名 `Trey Holterman…`）、作者头像 443×443、导流卡缩略图 439×439 | 逐张目视；只留 hero 并补描述性 alt（保留原署名作 credit）；另两张随卡片删除，同步 `meta.json.verification.image_references` |
+| `**the decision traces **-`、`**Incumbents will fight back. **` 粗体尾随空格 | 按 L070 用精确字符串替换；修完 grep `::**` 复核 |
+| 6 个独立成段的加粗伪标题 | 按 L011 提升为 `###`，**清洗版 `source.md` 与双语稿同步提升**，双语写 `### English / 中文`；否则 `_paragraphs` 会误报源文段落缺失 |
+| 正文链接带长串广告追踪参数（如 PlayerZero 的 `?matchtype=&utm_...&gad_...`） | URL 简化为站点根地址；`_normalize` 只取链接锚文本，不影响双语对账 |
+| 用户未给「核心洞察」 | 按 L066 不编造 `Key Takeaways`，只做逐段中英对照归档 |
+
+**装配与对账（本次新增硬规则）**：双语 bullet 必须写成 `- English / 中文`（保留 `- ` 前缀）；装配脚本写成 `en[2:] + " / " + cjk` 会丢前缀，导致线上 4 个 bullet 合并成一个 `p` 块，而 `bilingual_validate.py` 与 `--dry-run` 都会**假阴性通过**（校验器只检查匹配 `- ` 的行，一行都没有就当通过）。上传前后必须额外对账 `grep -c '^- ' 本地` == 线上 `bulleted_list` 块数。已上传页面要修复时用 `upload ... --entry-id <entry_id>` 原地清空重写（返回 `action: updated`），不要 create 出重复条目。

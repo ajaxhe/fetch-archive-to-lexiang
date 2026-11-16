@@ -1179,6 +1179,9 @@ async def _extract_and_save(
         }
         
         if (!articleEl) {
+            // Fallback container: still pin it so the Markdown conversion pass
+            // reuses this exact node instead of returning an empty string.
+            try { document.body.setAttribute('data-fetch-article-root', '1'); } catch (_) {}
             return { title: document.title, subtitle: '', author: '', date: '', content: document.body.innerText, html: document.body.innerHTML };
         }
 
@@ -1369,6 +1372,13 @@ async def _extract_and_save(
                 }
             }
         }
+
+        // Pin the exact container chosen during extraction. The Markdown
+        // conversion pass below reuses this node; its selector list used to
+        // differ from the extraction list (extraction has '[class*="body"]'),
+        // which produced a 0-char Markdown on sites whose article root is only
+        // matched by that fallback. See lessons-learned L072.
+        try { articleEl.setAttribute('data-fetch-article-root', '1'); } catch (_) {}
 
         return { 
             title, subtitle, author, date, 
@@ -1561,7 +1571,10 @@ async def _extract_and_save(
         const isSubstack = args.isSubstack;
         
         const a16zArticle = document.querySelector('.js-article-content');
-        let articleEl = isSubstack
+        // Prefer the container pinned by the extraction pass so both stages
+        // always convert the same DOM node (lessons-learned L072).
+        let articleEl = document.querySelector('[data-fetch-article-root="1"]');
+        if (!articleEl) articleEl = isSubstack
             ? document.querySelector('.available-content')
             : (a16zArticle || null);
         if (isWechat) {

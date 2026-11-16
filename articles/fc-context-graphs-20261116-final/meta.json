@@ -1,0 +1,32 @@
+{
+  "title": "AI’s trillion-dollar opportunity: Context graphs",
+  "display_title": "AI’s trillion-dollar opportunity: Context graphs / AI 的万亿美元机会：上下文图谱",
+  "source_url": "https://foundationcapital.com/ideas/context-graphs-ais-trillion-dollar-opportunity",
+  "source_title": "AI’s trillion-dollar opportunity: Context graphs",
+  "source_type": "article",
+  "language": "en",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d",
+  "subtitle": "",
+  "author": "Jaya Gupta, Ashu Garg",
+  "date": "Dec 22, 2025",
+  "reading_time": "12 MIN READ",
+  "categories": [
+    "AI",
+    "Enterprise"
+  ],
+  "fetched_at": "2026-11-16T10:09:16.553169",
+  "content_length": 15053,
+  "image_count": 1,
+  "images": [
+    "images/img_02_ffc93359.jpg"
+  ],
+  "verification": {
+    "ok": true,
+    "source_sha256": "d147332aa63d30abd8d28ba612a958fa1ca5e1ba25c3d2a02d85d09235380d11",
+    "note": "抓取包清洗版（foundationcapital.com /ideas/，Framer 生成站，首次遇到，L072）。标题：抓取稿有 2 个 H1 —— 首行是 <title>/og:title 带站点后缀「 - Foundation Capital」，第 16 行才是正文 H1「AI’s trillion-dollar opportunity: Context graphs」；按 L060 去后缀，只用正文 H1 作 meta.title / source_title / 文件名 / display_title（45 字符，加中文译名共 68 字符 < 150，无需按 L035 缩短）。作者取正文 byline（Jaya Gupta、Ashu Garg 两个 team-members 链接，页面另有重复的作者卡「Ashu Garg, Jaya Gupta」），无 <meta name=\"author\">；日期取 <time datetime=\"2025-12-22T00:00:00.000Z\">Dec 22, 2025</time> + 页面「Posted」；分类标签为 AI / Enterprise（被拍平成 AIENTERPRISE 粘在首段段首，已剥离，记入顶部元信息行）；阅读时长 12 MIN READ 是 JS 估算值（curl 原始 HTML 里是 0 MIN READ 占位）。模板识别：Framer，DOM 为 <div id=\"main\"> / <div id=\"article-content\"> / <div id=\"content-container\"> / data-framer-component-type=\"RichTextContainer\"，通用 article/main/.entry-content/[class*=\"body\"] 选择器全不命中，提取阶段回退 document.body。删除的平台噪音：站点导航 ALL IDEAS / PERSPECTIVES、抓取器元信息行与段首 ---（L024）、两次 newsletter CTA（### Get insights directly to your inbox. / ## Get insights directly to your inbox.）、About Ashu 侧栏作者卡（Secondary Content / Content 容器：h4、简介、More about Ashu 链接、作者头像 img_03 443×443）、相关文章导流卡（Get the full report / Text & CTA：img_04 439×439 飞轮图、Ashu Garg, Jaya Gupta、The compounding asset enterprise software never had 标题与摘要、Read the article）、页脚两处办公地址 / Work at our companies / Terms of Use / Privacy Policy / © Foundation Capital 2026 / Cookie Settings / reCAPTCHA / framer.com/edit 链接。图片 3 张逐张目视确认：img_02（2560×1440 真 JPEG，漏斗信号汇聚到堆叠数据层）是 og:image 正文头图，保留并改写 alt（原 alt 只是作者署名，无描述）；img_03 为 Ashu 头像、img_04 为另一篇文章导流卡缩略图，均属侧栏/推荐卡，连同卡片一起删除。CMS 格式修复：首段标签粘连、**the decision traces **- 与 **Incumbents will fight back. ** 两处粗体尾随空格（按 L070 精确字符串替换）、PlayerZero 链接去掉 google ads 追踪参数只保留 https://playerzero.ai/、6 个独立成段的加粗伪标题按 L011 提升为 ###（源文与双语稿同步提升，避免 _paragraphs 对账误判）、标题前补空行。用户本次未给「核心洞察」，按 L066 不编造 Key Takeaways，只做逐段中英对照归档。正文 4 个 bullet 按 English / 中文 同行配对，无表格、无裸 ~ 近似值、无转义 $。",
+    "image_references": [
+      "images/img_02_ffc93359.jpg"
+    ],
+    "platform_noise_hits": []
+  }
+}
