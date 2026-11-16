@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -174,6 +175,37 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn('output_path / "meta.json"', article)
         for field in ("source_url", "source_title", "source_type", "language"):
             self.assertIn(f'"{field}"', article)
+
+    def test_article_rejects_html_payload_saved_as_png(self):
+        module = load_module("article_image_sniff", SCRIPTS / "fetch_article.py")
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+        jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 16
+        html = (
+            b"<!DOCTYPE html><!-- Last Published: Sun Nov 15 2026 -->"
+            b"<html data-wf-domain=\"www.glean.com\"><title>Glean</title></html>"
+        )
+        self.assertEqual(module.sniff_image_kind(png), "png")
+        self.assertEqual(module.sniff_image_kind(jpeg), "jpeg")
+        self.assertIsNone(module.sniff_image_kind(html))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "img_05_9a5f867a.png"
+            fake.write_bytes(html)
+            self.assertIsNone(module.finalize_downloaded_image(fake))
+            self.assertFalse(fake.exists())
+
+            real = Path(tmp) / "hero.png"
+            real.write_bytes(png)
+            kept = module.finalize_downloaded_image(real)
+            self.assertEqual(kept, real)
+            self.assertTrue(real.exists())
+
+            misnamed = Path(tmp) / "photo.png"
+            misnamed.write_bytes(jpeg)
+            renamed = module.finalize_downloaded_image(misnamed)
+            self.assertEqual(renamed.name, "photo.jpg")
+            self.assertTrue(renamed.exists())
+            self.assertFalse(misnamed.exists())
 
     def test_wechat_uses_native_lexiang_import_without_fetch_fallback(self):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")

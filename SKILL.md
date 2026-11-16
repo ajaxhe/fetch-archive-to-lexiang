@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.6.12"
+version: "4.6.13"
 author: ajaxhe
 license: MIT
 category: research
@@ -264,7 +264,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ meta.json 标准字段完整，原文标题与来源 URL 可追溯
 □ meta.json.verification.ok == true；优先依据紧凑报告完成抓取自检，避免重复通读全文
 □ 作者与发布日期来自 canonical meta/time/JSON-LD，并在最终文档顶部只展示一次
-□ images/ 中引用文件完整，图文顺序保留
+□ images/ 中引用文件完整，图文顺序保留；每个被引用文件都是真实图片（不是 HTML 错误页冒充的 .png）
 □ 订阅引导、相关推荐、newsletter disclaimer、页脚图片等平台噪音已在抓取转 MD 时过滤
 □ 非中文包已通过 trans-doc-to-md 完整性验证
 □ 最终文件名为原文标题

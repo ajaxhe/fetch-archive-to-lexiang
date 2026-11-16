@@ -16,9 +16,9 @@ Supports two browser modes:
    and Cloudflare-protected sites may detect the automation and block it.
 
 Image handling:
-   Downloaded images are automatically inspected for format mismatches
-   (e.g. WebP served as .png, SVG served as .png) and converted to real
-   PNG for maximum compatibility with PDF generators and document editors.
+   Downloaded images are inspected by magic bytes. HTML/JSON error pages
+   (common on Glean/Webflow CTA URLs) are discarded instead of being saved
+   as .png. WebP/SVG are converted to real PNG and renamed to .png.
 
 Usage:
     # CDP mode (for OpenAI, LinkedIn, Cloudflare-protected sites)
@@ -810,6 +810,68 @@ async def _wait_for_cloudflare(page, max_wait: int = 30) -> bool:
     return True
 
 
+_IMAGE_KIND_EXT = {
+    "png": ".png",
+    "jpeg": ".jpg",
+    "gif": ".gif",
+    "webp": ".webp",
+    "svg": ".svg",
+    "avif": ".avif",
+}
+
+
+def sniff_image_kind(data: bytes) -> str | None:
+    """Return a raster/vector kind from magic bytes, or None if not an image.
+
+    Glean/Webflow (and similar CDNs) often 200-return the article HTML for
+    background/CTA image URLs. Those payloads must not be archived as .png.
+    """
+    if not data:
+        return None
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if len(data) >= 12 and data[4:8] == b"ftyp" and (
+        data[8:12] in {b"avif", b"avis", b"mif1"} or b"avif" in data[8:20]
+    ):
+        return "avif"
+    head = data[:400].lstrip()
+    if head.startswith(b"<svg") or head.startswith(b"<svg\n") or head.startswith(b"<svg "):
+        return "svg"
+    if head.startswith(b"<?xml") and b"<svg" in data[:800]:
+        return "svg"
+    return None
+
+
+def finalize_downloaded_image(img_path: Path) -> Path | None:
+    """Keep only real images; convert WebP/SVG to PNG and fix the suffix.
+
+    Returns the final path, or None if the payload is HTML/JSON/unknown and
+    the file has been deleted.
+    """
+    if not img_path.exists():
+        return None
+    kind = sniff_image_kind(img_path.read_bytes())
+    if kind is None:
+        img_path.unlink(missing_ok=True)
+        return None
+    if kind in {"webp", "svg"}:
+        _convert_image_format(img_path)
+        kind = sniff_image_kind(img_path.read_bytes()) or kind
+    ext = _IMAGE_KIND_EXT.get(kind, img_path.suffix or ".png")
+    final = img_path.with_suffix(ext)
+    if final != img_path:
+        if final.exists():
+            final.unlink()
+        os.replace(str(img_path), str(final))
+    return final
+
+
 def _convert_image_format(img_path: Path) -> bool:
     """Detect real image format and convert WebP/SVG to PNG if necessary.
 
@@ -822,12 +884,11 @@ def _convert_image_format(img_path: Path) -> bool:
     if not img_path.exists():
         return False
 
-    # Read first few bytes to detect format
-    with open(img_path, "rb") as f:
-        header = f.read(32)
-
-    is_webp = header[:4] == b"RIFF" and header[8:12] == b"WEBP"
-    is_svg = header.lstrip()[:5] in (b"<?xml", b"<svg ", b"<svg\n") or b"<svg" in header[:200]
+    with open(img_path, "rb") as handle:
+        header = handle.read(800)
+    kind = sniff_image_kind(header)
+    is_webp = kind == "webp"
+    is_svg = kind == "svg"
 
     if not is_webp and not is_svg:
         return False
@@ -1517,6 +1578,7 @@ async def _extract_and_save(
         local_path = images_dir / filename
 
         last_error = ""
+        rejected = False
         for attempt in range(3):
             try:
                 response = await page.request.get(src)
@@ -1524,11 +1586,19 @@ async def _extract_and_save(
                     content_bytes = await response.body()
                     if len(content_bytes) > 500:
                         local_path.write_bytes(content_bytes)
-                        # Auto-convert WebP/SVG to PNG for compatibility
-                        converted = _convert_image_format(local_path)
-                        fmt_note = " (→PNG)" if converted else ""
-                        print(f"  ✅ 图片 {i+1}/{len(image_elements)}: {filename} ({len(content_bytes)//1024}KB){fmt_note}")
-                        return src, f"images/{filename}"
+                        final_path = finalize_downloaded_image(local_path)
+                        if final_path is None:
+                            rejected = True
+                            last_error = "payload is not an image"
+                            break
+                        fmt_note = ""
+                        if final_path.suffix == ".png" and ext != ".png":
+                            fmt_note = " (→PNG)"
+                        print(
+                            f"  ✅ 图片 {i+1}/{len(image_elements)}: "
+                            f"{final_path.name} ({len(content_bytes)//1024}KB){fmt_note}"
+                        )
+                        return {"src": src, "local": f"images/{final_path.name}"}
                     last_error = f"too small ({len(content_bytes)}B)"
                 else:
                     last_error = f"HTTP {response.status}"
@@ -1536,6 +1606,9 @@ async def _extract_and_save(
                 last_error = str(e)[:60]
             if attempt < 2:
                 await page.wait_for_timeout(400 * (attempt + 1))
+        if rejected:
+            print(f"  ⚠️  图片 {i+1} 下载到的不是图片，已丢弃: {last_error}")
+            return {"src": src, "rejected": True}
         print(f"  ⚠️  图片下载异常: {last_error}")
         return None
 
@@ -1544,16 +1617,21 @@ async def _extract_and_save(
         for i, img_info in enumerate(image_elements)
     ))
     image_map = {
-        src: local_rel
+        result["src"]: result["local"]
         for result in download_results
-        if result is not None
-        for src, local_rel in [result]
+        if result and result.get("local")
+    }
+    rejected_images = {
+        result["src"]: True
+        for result in download_results
+        if result and result.get("rejected")
     }
 
     # Convert HTML to Markdown
     print("📝 正在转换为 Markdown...")
     markdown = await page.evaluate("""(args) => {
         const imageMap = args.imageMap;
+        const rejectedImages = args.rejectedImages || {};
         const extractedTitle = args.title;
         const isWechat = args.isWechat;
         const isDedao = args.isDedao;
@@ -1704,6 +1782,7 @@ async def _extract_and_save(
                     // Try matching imageMap with both src and data-src (WeChat uses data-src as key)
                     const localPath = imageMap[src] || imageMap[dataSrc];
                     if (!localPath) {
+                        if (rejectedImages[src] || rejectedImages[dataSrc]) return '';
                         const w = node.naturalWidth || node.width || 0;
                         const h = node.naturalHeight || node.height || 0;
                         if ((w > 0 && w < 50 && h > 0 && h < 50) || /[,/]w_3[0-9],h_3[0-9]/.test(src)) {
@@ -1725,6 +1804,9 @@ async def _extract_and_save(
                         if (!src || src.includes('data:image/svg')) return '';
                         const localPath = imageMap[src];
                         if (!localPath) {
+                            if (rejectedImages[src]) {
+                                return caption ? ('*' + caption.innerText.trim() + '*\\n\\n') : '';
+                            }
                             const w = img.naturalWidth || img.width || 0;
                             const h = img.naturalHeight || img.height || 0;
                             if ((w > 0 && w < 50 && h > 0 && h < 50) || /[,/]w_3[0-9],h_3[0-9]/.test(src)) {
@@ -1764,6 +1846,7 @@ async def _extract_and_save(
         return processNode(articleEl, 0);
     }""", {
         "imageMap": image_map,
+        "rejectedImages": rejected_images,
         "title": title,
         "isWechat": is_wechat,
         "isWebflow": is_webflow,
@@ -1816,6 +1899,14 @@ async def _extract_and_save(
     ]
     if missing_images:
         raise RuntimeError(f"正文引用的本地图片不存在: {missing_images}")
+    fake_images = [
+        local_rel for local_rel in archived_images
+        if sniff_image_kind((output_path / local_rel).read_bytes()) is None
+    ]
+    if fake_images:
+        raise RuntimeError(
+            f"正文引用的本地文件不是图片（常见于 HTML 错误页被存成 .png）: {fake_images}"
+        )
 
     substack_noise = (
         "discussion about this episode",
@@ -1884,6 +1975,7 @@ async def _extract_and_save(
             "markdown_image_references": len(referenced_images),
             "unique_local_images": len(archived_images),
             "missing_local_images": 0,
+            "rejected_non_image_downloads": len(rejected_images),
             "platform_noise_hits": noise_hits,
         },
     }
