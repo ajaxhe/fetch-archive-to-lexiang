@@ -237,7 +237,7 @@ await page.pdf({
 python scripts/fetch_article.py login   # 首次在 CDP Chrome 登录，后续直接复用
 ```
 
-**付费墙检测信号**：DOM `[data-testid="paywall"]`/`.paywall`；文本 `This post is for paid subscribers`/`Subscribe to read`/`Upgrade to paid`。不同站点结构不同，抓取不全时检查实际付费墙标识并更新检测逻辑。
+**付费墙检测信号**：DOM `[data-testid="paywall"]` 或正文 `This post is for paid subscribers` / `This post is for paying subscribers` 时立刻停，即使预览已经超过 2000 字；较弱的 `Subscribe to read` / `Upgrade to paid` 只在正文过短时拦截，避免把免费文页脚订阅组件当成墙。不同站点结构不同，抓取不全时检查实际付费墙标识并更新检测逻辑。
 
 ### X.com / Twitter 帖子
 

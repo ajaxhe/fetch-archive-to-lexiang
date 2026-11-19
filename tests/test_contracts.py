@@ -192,6 +192,47 @@ class SkillContractTests(unittest.TestCase):
         self.assertTrue(module._is_substack_site("https://example.substack.com/p/post"))
         self.assertIn("use_cdp: bool = True", (SCRIPTS / "fetch_article.py").read_text())
 
+    def test_paywall_preview_blocks_substack_teaser_even_when_long(self):
+        module = load_module("article_paywall_contract", SCRIPTS / "fetch_article.py")
+        teaser = "A" * 5000
+        self.assertIn(
+            "data-testid=paywall",
+            module.classify_paywall_preview(
+                has_paywall_overlay=True,
+                body=teaser,
+                content_length=len(teaser),
+            ),
+        )
+        self.assertIn(
+            "paid subscribers",
+            module.classify_paywall_preview(
+                body=teaser + "\nThis post is for paid subscribers",
+                content_length=len(teaser),
+            ),
+        )
+        self.assertEqual(
+            module.classify_paywall_preview(
+                body="Subscribe to read more from this author.\n" + teaser,
+                content_length=len(teaser),
+            ),
+            "",
+        )
+        self.assertIn(
+            "付费墙",
+            module.classify_paywall_preview(
+                body="Subscribe to read the rest of this post.",
+                content_length=400,
+            ),
+        )
+        self.assertIn(
+            "has_authority=false",
+            module.classify_paywall_preview(has_authority=False, body=teaser),
+        )
+        self.assertEqual(
+            module.classify_paywall_preview(body=teaser, content_length=len(teaser)),
+            "",
+        )
+
     def test_substack_noise_is_filtered_before_markdown_output(self):
         article = (SCRIPTS / "fetch_article.py").read_text(encoding="utf-8")
         for marker in (

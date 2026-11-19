@@ -110,7 +110,7 @@ requires:
 
 ### 付费墙：停等登录（L056）
 
-侦察或抓取一旦确认是付费墙、登录墙或截断预览，立刻停住。判定包括：正文出现「剩余 N%，继续学习」、`登录后继续学习`、得到 `packetInfo.has_authority === false`，或脚本退出码对应 `PAYWALL_LOGIN_REQUIRED`。
+侦察或抓取一旦确认是付费墙、登录墙或截断预览，立刻停住。判定包括：正文出现「剩余 N%，继续学习」、`登录后继续学习`、得到 `packetInfo.has_authority === false`、Substack `[data-testid="paywall"]` / `This post is for paid subscribers`（预览即使超过 2000 字也要停），或脚本退出码对应 `PAYWALL_LOGIN_REQUIRED`。
 
 停住之后只做这三件事：
 

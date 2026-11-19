@@ -518,6 +518,39 @@ def _is_dedao_article(url: str) -> bool:
     return "dedao.cn" in hostname
 
 
+def classify_paywall_preview(
+    *,
+    has_authority: bool | None = None,
+    body: str = "",
+    has_paywall_overlay: bool = False,
+    content_length: int = 0,
+) -> str:
+    """Return a reason when the visible page is still a login/paywall preview.
+
+    Empty string means the page can be archived. Strong Substack signals
+    (paywall overlay or "This post is for paid subscribers") block even when
+    the teaser is longer than 2000 characters. Weaker subscribe CTAs only
+    block short pages, so free posts with a footer widget still archive.
+    """
+    if has_authority is False:
+        return "得到 has_authority=false，当前只是预览"
+    if re.search(r"剩余\s*\d+%", body) and "继续学习" in body:
+        return "正文标注剩余百分比并要求继续学习"
+    if "登录后继续学习" in body and re.search(r"验证码|扫码登录", body):
+        return "页面停在登录墙"
+    if has_paywall_overlay:
+        return "付费墙仍在（data-testid=paywall），当前只是预览"
+    if (
+        "This post is for paid subscribers" in body
+        or "This post is for paying subscribers" in body
+    ):
+        return "正文标注 This post is for paid subscribers，当前只是预览"
+    weak_cta = "Subscribe to read" in body or "Upgrade to paid" in body
+    if weak_cta and content_length < 2000:
+        return "仍被付费墙拦截，当前只是预览"
+    return ""
+
+
 async def _paywall_login_block_reason(page) -> str:
     """Return a reason when the page is still a login/paywall preview.
 
@@ -525,26 +558,35 @@ async def _paywall_login_block_reason(page) -> str:
     caller must stop without writing source.md and without retrying.
     """
     try:
-        reason = await page.evaluate(
+        signals = await page.evaluate(
             """() => {
                 const body = document.body ? (document.body.innerText || '') : '';
                 const state = window.__INITIAL_STATE__;
                 const packet = state && state.packetInfo;
-                if (packet && packet.has_authority === false) {
-                    return '得到 has_authority=false，当前只是预览';
-                }
-                if (/剩余\\s*\\d+%/.test(body) && body.includes('继续学习')) {
-                    return '正文标注剩余百分比并要求继续学习';
-                }
-                if (body.includes('登录后继续学习') && /验证码|扫码登录/.test(body)) {
-                    return '页面停在登录墙';
-                }
-                return '';
+                const contentEl = document.querySelector(
+                    '.available-content, article, .post-content, .body'
+                );
+                return {
+                    has_authority: (packet && packet.has_authority === false)
+                        ? false : null,
+                    body: body,
+                    has_paywall_overlay: !!document.querySelector(
+                        '[data-testid="paywall"]'
+                    ),
+                    content_length: contentEl ? contentEl.innerText.length : 0,
+                };
             }"""
         )
     except Exception:
         return ""
-    return reason or ""
+    if not isinstance(signals, dict):
+        return ""
+    return classify_paywall_preview(
+        has_authority=signals.get("has_authority"),
+        body=signals.get("body") or "",
+        has_paywall_overlay=bool(signals.get("has_paywall_overlay")),
+        content_length=int(signals.get("content_length") or 0),
+    )
 
 
 def _is_webflow_blog(url: str) -> bool:
