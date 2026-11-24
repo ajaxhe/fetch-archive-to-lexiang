@@ -1,0 +1,55 @@
+{
+  "title": "How do you build a context graph?",
+  "display_title": "How do you build a context graph? / 如何构建上下文图谱？",
+  "source_url": "https://www.glean.com/blog/how-do-you-build-a-context-graph",
+  "source_title": "How do you build a context graph?",
+  "source_type": "article",
+  "language": "en",
+  "author": "David Huynh (Software Engineer), Pradeep Vaghela (Software Engineer), Julie Mills (PMM)",
+  "publish_date": "Feb 05, 2026",
+  "read_time": "8 minutes",
+  "publisher": "Glean",
+  "template": "glean.com/blog (Webflow)",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d",
+  "parent_name": "知识图谱 / 参考素材",
+  "space_id": "cc9dc48a4a8845ff83c3d403840ae189",
+  "verification": {
+    "ok": true,
+    "extract_method": "fetch_article.py fetch via CDP real Chrome (headless=new, --no-sandbox --in-process-gpu)",
+    "body_chars": 13973,
+    "image_references": 3,
+    "local_images": 3,
+    "remote_images": 3,
+    "remote_callouts": 0,
+    "dropped_images": [
+      "img_01_bdc814e7.webp / img_02_8f322a66.webp / img_03_3f9805c6.webp (480x480 / 512x512 / 512x512 site-nav icons, never referenced in body)",
+      "img_07_03a8ee20.png / img_08_03a8ee20.png (608KB each, identical filename hash, file header is HTML text => page HTML saved as .png, not images; L070 pattern)",
+      "img_09_1a9fe696.png (AVIF, alt='CTA Section Background Shape', decorative, same asset as in the previous post)"
+    ],
+    "kept_images": [
+      "img_04_d415f7a9.webp (1110x621 hero, layered context graph stack)",
+      "img_05_947526a4.png (1600x728, context graph layer between raw content and agent execution)",
+      "img_06_df1d9456.png (1600x1556, full build pipeline incl. agent traces and playbooks)"
+    ],
+    "noise_removed": [
+      "entire site mega-menu repeated 3x incl. inline CSS + JS block",
+      "'8minutes read' flattened byline, 3 author cards, audio player ('to article 0:00 0.5x 1x 1.5x 2x'), 'Table of contents' with #anchors, 'Contextless AI wastes tokens' whitepaper CTA inside TOC, 'Share this article:'",
+      "footer: 'Back to all stories', 2x brand logomark, two empty '##', 'Get The Resource' x2, 'Work AI for all.', 'Get a Demo', CTA background AVIF",
+      "stray U+200D zero-width joiner on its own line before the closing paragraph"
+    ],
+    "inline_emphasis_removed": "原文有 1 处 <strong>(context graph) 与 5 处 <em>(do not / k / n / incident_id=INC-123... / used)；按 L073 全部转为纯文本，避免 uploader 在 text_run 边界 trim 掉空格造成粘连（上一篇实测会变成 'context graphis a model'）",
+    "kept_as_is": [
+      "(e “investigate_alert” — 原文 HTML 即如此（缺 .g.），非抓取丢字，保持原样不改",
+      "(views, edits, comments, etc,) — 原文 HTML 即为逗号，非句号，保持原样",
+      "文末 'Looking to learn more...' 段保留，指向另一篇 context-data-platform 博客，属原文正文而非站点 CTA"
+    ],
+    "alt_rewrites": "hero alt 原为文章标题；img_05 / img_06 原文无 alt，按图内容补写英文 alt",
+    "tilde_policy": "本篇无 ~ + 数字，未触发 L068 的 ≈ 改写",
+    "bold_fixes": "本篇无 CMS 粗体尾随空格问题（与 L067/L070 的 /blog/ 模板不同）",
+    "entry_id": "90658ebbfec6421996f15f588a7469d6",
+    "page_url": "https://lexiangla.com/pages/90658ebbfec6421996f15f588a7469d6?company_from=csig",
+    "remote_blocks": "h2 4 / h3 5 / image 3 / quote 2 / bulleted_list 22",
+    "list_reconcile": "local bullet lines 22 == remote bulleted_list 22",
+    "note": "Glean /blog/ 模板第 6 次实战。无 Key Takeaways —— 用户未提供核心洞察，按 L066 不代拟。目录查重：参考素材原有 15 条，无同名/同 URL 条目，上传后 16 条且新页 sort_id 最小（置顶）。"
+  }
+}

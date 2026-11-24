@@ -1268,3 +1268,20 @@ Agent 在以下时机**必须**更新此文件：
   5. 图片 3 张但性质各异，必须逐张目视：hero（2560×1440 真 JPEG，og:image，alt 只是作者署名无描述）保留并改写 alt；作者头像 443×443 与相关文章缩略图 439×439（内容与本文高度相关的飞轮图，**容易被误判为正文图**）分别属于侧栏卡和导流卡，随卡片一起删。最终只留 1 张。
   6. CMS 格式：`**the decision traces **-` / `**Incumbents will fight back. **` 两处粗体尾随空格（按 L070 精确字符串替换）；`PlayerZero` 链接带一长串 google ads 追踪参数，简化为 `https://playerzero.ai/`（链接 URL 不参与 `_normalize` 对账，安全）；6 个独立成段的加粗伪标题按 L011 提升为 `###`，**源文与双语稿必须同步提升**，否则 `_paragraphs` 在源文里算正文段、在双语稿里被当标题跳过，会误报「缺少源文段落」。
 - **自检项**：`bilingual_validate.py` ok=true + dry-run ok=true + `grep -c '^- '` 与线上 `bulleted_list` 块数一致（第三道是本次新增）；`verified=true` / `local_images == remote_images == 1` / `local_callouts == remote_callouts == 0`；11 个标题（6 h2 + 5 h3）、4 个 `bulleted_list`、2 个 quote 元信息块、image block 有 `file_id`、无字面量 `##` 段落；目录分页查重后 13→14 且新页 `sort_id` 最小（置顶）、`status=finished`；原地更新后目录条数不变。
+
+#### L073：粗体标签后的空格会被吞（线上粘连），以及 update 后 passage 检索仍返回旧索引（🟡 P1，2026-11-24，`cowork-mcp-eval`）
+
+> 编号说明：接 L072。本条是 Glean `/blog/` 第 5 次实战，新增两个跨平台通用坑（与站点模板无关）。新条目一律从 **L074** 往后排。
+
+- **症状（最容易被忽略的渲染缺陷）**：双语稿写得完全正确，`lexiang_upload.py` 返回 `verified=true`、dry run 也 `ok=true`，但线上读块发现文本粘连：
+  1. `- **Maxium Corp prod** was the deployment flagged` → 线上 `Maxium Corp prodwas the deployment flagged`（bold 后空格全丢）
+  2. `- **Maxium Corp** — Google Drive indexed docs` → 线上 `Maxium Corp— Google Drive`
+  3. `**Glean** / **Glean 的回答**` → 线上 `Glean/Glean 的回答`
+- **根因**：uploader 把 `**bold**` 与后续普通文本拆成**不同的 `text_run`**，并对每个 run 的 `content` 做 trim。于是 bold 边界处的空格不属于任何一个 run，直接消失。**`verified=true` 只对账图片数量和段落结构，不检查 text_run 内的字符间隔**，所以两道闸门都拦不住。
+- **写死修法（三选一，按优先级）**：
+  1. **标签整块本地化**：把 `**Glean** / **Glean 的回答**` 改成**单个** bold run `**Glean 的回答**`。注意对账安全 —— 中文句子里的英文专名也会被 `TOKEN_RE` 提取，`**Glean 的回答**` 的 tokens 是 `glean`，与源文 `**Glean**` 完全匹配，`bilingual_validate.py` 仍 `ok=true`。
+  2. **列表项去粗体**：`- **Maxium Corp** — xxx` 直接降级为 `- Maxium Corp — xxx`。加粗属格式、不参与 `_normalize` 对账，去掉不影响校验，但能保证整行是一个 text_run、空格必留。
+  3. **不要在 bold 后靠空格转普通文本**：如确需强调，把冒号写进 bold（`**Label:**`）+ 紧跟空格，或干脆用 `###` 标题（见 L011/L071）。
+- **验证方法（关键）**：更新后**不要用 `lexiang_search type=passage` 判断正文是否生效** —— 页面 `status` 仍是 `processing` 时，检索返回的是**旧索引**，会让人误判「修复没生效」而重复上传。正确做法是 `block_list_block_children`（读实时块，非索引）；只想看结构时用 `_mcp_fields="-blocks.text,-blocks.heading2,-blocks.heading3,-blocks.heading4,-blocks.image,-blocks.bulleted"` 把正文剔掉，输出从 ~15k tokens 降到 ~2k。
+- **自检项新增**：上传后除 bulleted_list 计数外，**必须抽查至少一个「加粗标签 + 正文」的块**，确认 text_run 里没有 `xxxwas` / `xxx—` 这类粘连；发现粘连用 `--entry-id` 原地更新，不重新 create。
+- **顺带修正的目录事实（2026-11-24 复测，覆盖 SKILL.md Step 3 与旧条目）**：本机 MCP 凭证的 `whoami` 返回 `personal_space` = `cc9dc48a4a8845ff83c3d403840ae189`（「ajaxhe个人知识库」），`root_entry_id` = `952c76246f3c4cee85bda1f25ff7a7aa`。**config.json 里的 space `b6013f6492894a29abbd89d5f2e636c6`（「贾维斯」）与旧条目记的 root `a97cd58ddbae4013b7e1025c0be991cc` 在当前 csig company 下均已不存在**，直接调用报 `不存在ID为…的kb_entry资源`。实际归档惯例也不是日期目录，而是 **`知识图谱`(b2af0a09) → `参考素材`(35869bfd86b74f248bcd45a013b5223d)**，12 篇 Glean 文章 + 2 个 PDF 都在此。新任务先 `lexiang_search type=doc` 找一篇历史文章、`lexiang_fetch resource=entry` 看 `parent_id`，比读 config 可靠。

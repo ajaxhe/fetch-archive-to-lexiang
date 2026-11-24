@@ -1,0 +1,58 @@
+{
+  "title": "Context makes the Coworker: Glean preferred ~2.5x as often as off-the-shelf MCP tools, which consumed 30% more tokens in Claude Cowork",
+  "display_title": "Context makes the Coworker: Glean preferred ≈2.5x over off-the-shelf MCP / 上下文决定 AI 同事：Glean 相对开箱即用 MCP 被偏好 ≈2.5 倍",
+  "source_url": "https://www.glean.com/blog/cowork-mcp-eval",
+  "source_title": "Context makes the Coworker: Glean preferred ~2.5x as often as off-the-shelf MCP tools, which consumed 30% more tokens in Claude Cowork",
+  "source_type": "article",
+  "language": "en",
+  "author": "Neil Dhruva (Engineering), Karthik Rajkumar (Applied Scientist), Chenhao Yang (Software Engineer), Julie Mills (PMM)",
+  "publish_date": "May 13, 2026",
+  "read_time": "9 minutes",
+  "publisher": "Glean",
+  "template": "glean.com/blog (Webflow)",
+  "parent_id": "35869bfd86b74f248bcd45a013b5223d",
+  "parent_name": "知识图谱 / 参考素材",
+  "space_id": "cc9dc48a4a8845ff83c3d403840ae189",
+  "verification": {
+    "ok": true,
+    "extract_method": "fetch_article.py fetch via CDP real Chrome (headless=new, --no-sandbox --in-process-gpu)",
+    "body_chars": 15896,
+    "image_references": 6,
+    "local_images": 6,
+    "remote_images": 6,
+    "dropped_images": [
+      "img_01..img_04 (500x500 / 512x512 / 192x192 icons from site nav, never referenced in body)",
+      "img_05 / img_12 / img_13 (627804 bytes each, identical filename hash 716ac6e4, file header <!DOCTYPE ht => HTML saved as .png, not images; L070 triple)",
+      "img_14 (AVIF, alt='CTA Section Background Shape', decorative)"
+    ],
+    "kept_images": [
+      "img_06_b4ed98b4.webp (1800x945 hero, token comparison 44k vs 57k)",
+      "img_07_e9c2c020.webp (win ratio by metric + median tokens)",
+      "img_08_cb379744.webp (token consumption when each side won)",
+      "img_09_b708da2f.webp (win rate heatmap, 5 categories x 3 metrics)",
+      "img_10_39878938.webp (side-by-side output, query 1)",
+      "img_11_74bb60ab.webp (side-by-side output, query 2)"
+    ],
+    "noise_removed": [
+      "cookie/consent banner at top",
+      "entire site navigation (Product / Customers / Solutions / Resources / Company mega-menu, repeated 3x, including inline CSS+JS block)",
+      "'9minutes read' flattened byline, author cards, 'Listen to article' audio player x2, 'Table of contents' with #anchors, 'Have questions or want a demo?' + Get a Demo",
+      "footer: 'Back to all stories', 3x brand logomark, two empty '##', 'Get The Resource' x2, 'Work AI for all.', 'Get a Demo'"
+    ],
+    "rebuilds": [
+      "Query 3 comparison card (What deployments had SSAT alerts last week?) was flattened into a single indented text blob; rebuilt as '**Glean**' / '**Off-the-shelf MCP**' labelled paragraphs with their bullet lists preserved",
+      "Query 3 question promoted from plain text to '####' heading so all three cases share the same level",
+      "'[Uber](...)and [ServiceNow]' missing space after link fixed"
+    ],
+    "alt_rewrites": "hero alt was the full 133-char H1 (duplicates page name); three 'Benchmark result chart' alt values were identical — replaced with per-figure descriptions carrying the actual data points",
+    "tilde_policy": "source.md keeps original '~'; bilingual file converts ~<digit> to ≈ per L068",
+    "bold_fixes": "no trailing-space bold found in this article (the CMS pattern from L067/L070 was absent)",
+    "note": "Glean /blog/ template, 4th reproduction of L067/L068/L070. <title> and og:title equal the body H1 (verified identical), so H1 was used as meta.title. Byline gives 4 authors while <meta name=author> gives only Neil Dhruva — byline全量 used per L070.",
+    "remote_callouts": 0,
+    "entry_id": "018675d57c3f41f98ea69e4a88d617b1",
+    "page_url": "https://lexiangla.com/pages/018675d57c3f41f98ea69e4a88d617b1?company_from=csig",
+    "remote_blocks": "h2 7 / h3 3 / h4 3 / image 6 / quote 3 / bulleted_list 19",
+    "list_reconcile": "local bullet lines 19 == remote bulleted_list 19",
+    "render_fix": "bold label followed by space loses the space on upload (text_run trim) => labels localized as single bold run, list items de-bolded"
+  }
+}
