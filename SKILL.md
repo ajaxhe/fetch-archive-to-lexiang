@@ -1,6 +1,6 @@
 ---
 name: fetch-archive-to-lexiang
-version: "4.6.12"
+version: "4.6.13"
 author: ajaxhe
 license: MIT
 category: research
@@ -279,6 +279,7 @@ python3 scripts/upload_video_via_openapi.py "<媒体文件>" \
 □ 播客：同说话人连续发言与短暂停顿已合并为大段；开场白只有少数大段
 □ 播客：每段明确标注“主持人/嘉宾”（有姓名则用姓名）；开场白未与第一问粘连
 □ 访谈视频：CAM++ 说话人区间已映射到 Whisper 文本；连续同一 spk 已合并；访谈说话人数不少于 2。SenseVoice 链路不加载 ct-punc；长访谈已传 preset_spk_num
+□ YouTube：元信息查询与下载都加了 `--no-playlist`；`source.md` 标题/频道就是当前 watch 视频，没有被 URL 里的 `list=` 换成播放列表最后一条
 □ 访谈视频：主持人/嘉宾标签完整；多位嘉宾没有因同属 guest 被误合并
 □ 新建页面上传失败时已自动回滚，不在日期目录或知识库留下临时空页面
 □ 上传后目标目录与上传前快照对账，仅保留最终页面和 VOD；无 test/v2/空白/重复条目

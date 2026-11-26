@@ -4,7 +4,7 @@
 
 `yt_download_transcribe.py` 只负责：
 
-1. yt-dlp 获取元信息和下载视频。
+1. yt-dlp 获取元信息和下载视频。watch URL 常带 `&list=`；yt-dlp 默认会展开整份播放列表。元信息查询必须与下载一样传 `--no-playlist`，否则 `--dump-json` 会为列表里每一条各打一行 JSON，旧逻辑取最后一行就会把播放列表末条的标题/频道写进当前视频的 `source.md`。
 2. ffmpeg 提取音频。
 3. Whisper 转录；访谈类视频默认用 SenseVoiceSmall + CAM++ 提供说话人区间。
 4. 保留 YouTube description 作为视频介绍。
@@ -56,8 +56,7 @@ Whisper 负责高质量文本，SenseVoiceSmall + CAM++ 只提供说话人时间
 SenseVoice 没有字级时间戳，不要给这条链路加载 `ct-punc`，否则会在分配说话人时崩溃。
 长访谈的声纹片段会超过约 2048 个；不指定人数时聚类会收成 1 个说话人。
 访谈必须传 `preset_spk_num`（主持人 + 嘉宾人数）。
-脚本按时间
-重叠把 `spk` 映射到 Whisper segment，再以说话人切换为首要边界合并：
+脚本按时间重叠把 `spk` 映射到 Whisper segment，再以说话人切换为首要边界合并：
 
 - 同一 `spk` 跨 ≤15 秒停顿继续合并。
 - 开场白最多 1400 字符或 180 秒；对话段最多 1800 字符或 360 秒。

@@ -24,6 +24,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 
@@ -63,10 +64,65 @@ def check_dependencies(with_speakers: bool = True):
         sys.exit(1)
 
 
+def youtube_video_id(url: str) -> str | None:
+    """从 watch/shorts/embed/youtu.be 链接取出视频 id，忽略 list= 播放列表参数。"""
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    path = parsed.path or ""
+    if host in {"youtu.be"}:
+        vid = path.strip("/").split("/")[0]
+        return vid or None
+    query = urllib.parse.parse_qs(parsed.query)
+    if query.get("v"):
+        return query["v"][0]
+    parts = [part for part in path.split("/") if part]
+    if len(parts) >= 2 and parts[0] in {"shorts", "embed", "live", "v"}:
+        return parts[1]
+    return None
+
+
+def parse_yt_dlp_dump(stdout: str, expected_id: str | None = None) -> dict:
+    """解析 yt-dlp --dump-json 输出，避免把播放列表最后一条当成当前视频。
+
+    watch URL 常带 &list=。yt-dlp 默认 noplaylist=False，不加 --no-playlist
+    时会为列表里每一条各打一行 JSON。旧逻辑取最后一行，标题/频道/时长
+    就会变成播放列表末条，而下载步骤有 --no-playlist，实际文件仍是当前视频。
+    """
+    objects: list[dict] = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            objects.append(parsed)
+    if not objects:
+        raise RuntimeError("yt-dlp 未返回视频 JSON")
+    if expected_id:
+        matched = [item for item in objects if item.get("id") == expected_id]
+        if matched:
+            return matched[0]
+        got = [item.get("id") for item in objects[:8]]
+        raise RuntimeError(
+            f"yt-dlp 返回的不是当前视频（期望 id={expected_id}，得到 {got}）。"
+            "请使用单条视频链接；若 URL 含 list=，元信息查询必须加 --no-playlist。"
+        )
+    if len(objects) > 1:
+        raise RuntimeError(
+            "yt-dlp 返回了多条视频的元信息，拒绝把播放列表最后一条写成当前视频。"
+            "请传入单条 watch URL，并确保命令含 --no-playlist。"
+        )
+    return objects[0]
+
+
 def get_video_info(url: str, cookies_from_browser: str | None = "chrome") -> dict:
     """获取视频元信息（标题、时长、频道等）"""
     print("📋 获取视频信息...")
-    cmd = ["yt-dlp", "--dump-json", "--no-download"]
+    expected_id = youtube_video_id(url)
+    cmd = ["yt-dlp", "--dump-json", "--no-download", "--no-playlist"]
     if cookies_from_browser:
         cmd.extend(["--cookies-from-browser", cookies_from_browser])
     cmd.append(url)
@@ -75,16 +131,15 @@ def get_video_info(url: str, cookies_from_browser: str | None = "chrome") -> dic
         # 如果带 cookies 失败，尝试不带 cookies
         if cookies_from_browser:
             print("   ⚠️  使用浏览器 cookies 失败，尝试不带 cookies...")
-            cmd_no_cookies = ["yt-dlp", "--dump-json", "--no-download", url]
+            cmd_no_cookies = [
+                "yt-dlp", "--dump-json", "--no-download", "--no-playlist", url,
+            ]
             result = subprocess.run(cmd_no_cookies, capture_output=True, text=True)
         if result.returncode != 0:
             print(f"❌ 获取视频信息失败: {result.stderr}")
             sys.exit(1)
 
-    # 解析 JSON（跳过 stderr 警告行，只取最后一行 JSON）
-    stdout_lines = result.stdout.strip().split('\n')
-    json_line = stdout_lines[-1] if stdout_lines else ""
-    info = json.loads(json_line)
+    info = parse_yt_dlp_dump(result.stdout, expected_id)
     return {
         "title": info.get("title", "Unknown"),
         "channel": info.get("channel", info.get("uploader", "Unknown")),

@@ -82,6 +82,28 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("Today we discuss evals", merged[0]["text"])
         self.assertIn("narrow judges", merged[1]["text"])
 
+    def test_youtube_metadata_dump_does_not_take_playlist_tail(self):
+        module = load_module("youtube_playlist_contract", SCRIPTS / "yt_download_transcribe.py")
+        watch = "https://www.youtube.com/watch?v=AAAAAAAAAAA&list=PLxxxx&index=1"
+        self.assertEqual(module.youtube_video_id(watch), "AAAAAAAAAAA")
+        self.assertEqual(
+            module.youtube_video_id("https://youtu.be/AAAAAAAAAAA?list=PLxxxx"),
+            "AAAAAAAAAAA",
+        )
+        dump = "\n".join([
+            json.dumps({"id": "AAAAAAAAAAA", "title": "Current talk", "channel": "Host"}),
+            json.dumps({"id": "ZZZZZZZZZZZ", "title": "Last playlist item", "channel": "Other"}),
+        ])
+        info = module.parse_yt_dlp_dump(dump, expected_id="AAAAAAAAAAA")
+        self.assertEqual(info["title"], "Current talk")
+        with self.assertRaisesRegex(RuntimeError, "不是当前视频"):
+            module.parse_yt_dlp_dump(dump, expected_id="MISSINGVIDEO")
+        with self.assertRaisesRegex(RuntimeError, "多条视频"):
+            module.parse_yt_dlp_dump(dump)
+
+        source = (SCRIPTS / "yt_download_transcribe.py").read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("--no-playlist"), 3)
+
     def test_youtube_does_not_merge_different_guest_speakers(self):
         module = load_module("youtube_multi_guest_contract", SCRIPTS / "yt_download_transcribe.py")
         merged = module.merge_by_speaker([
